@@ -22,7 +22,6 @@ export default function Home() {
   return (
     <main style={{ padding: 32, fontFamily: "sans-serif" }}>
       <h1>Bedrock Studio – MVP</h1>
-      <p>Frontend estático (Amplify) + Backend (API Gateway + Lambda)</p>
 
       <button onClick={callHello} style={{ padding: 8, marginTop: 16 }}>
         Llamar backend /hello
