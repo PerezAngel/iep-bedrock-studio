@@ -13,6 +13,7 @@ type VersionItem = {
 
 export default function Home() {
   const backend = process.env.NEXT_PUBLIC_BACKEND_BASE_URL;
+  const backendBase = (backend || "").replace(/\/+$/, "");
 
   const [contentId, setContentId] = useState<string>("");
   const [inputText, setInputText] = useState<string>(
@@ -31,7 +32,7 @@ export default function Home() {
     setResult("Llamando /hello...");
     try {
       if (!backend) throw new Error("Falta NEXT_PUBLIC_BACKEND_BASE_URL");
-      const r = await fetch(`${backend}/hello`, { cache: "no-store" });
+      const r = await fetch(`${backendBase}/hello`, { cache: "no-store" });
       const j = await r.text();
       setResult(j);
     } catch (e: any) {
@@ -43,7 +44,7 @@ export default function Home() {
     setError("");
     try {
       if (!backend) throw new Error("Falta NEXT_PUBLIC_BACKEND_BASE_URL");
-      const r = await fetch(`${backend}/content/${encodeURIComponent(id)}`, {
+      const r = await fetch(`${backendBase}/content/${encodeURIComponent(id)}`, {
         cache: "no-store",
       });
       const j = await r.json();
@@ -63,7 +64,7 @@ export default function Home() {
     setLoading(true);
     try {
       if (!backend) throw new Error("Falta NEXT_PUBLIC_BACKEND_BASE_URL");
-      const r = await fetch(`${backend}/content/generate`, {
+      const r = await fetch(`${backendBase}/content/generate`, {
         method: "POST",
         headers: { "content-type": "application/json" },
         body: JSON.stringify({
@@ -93,7 +94,7 @@ export default function Home() {
     try {
       if (!backend) throw new Error("Falta NEXT_PUBLIC_BACKEND_BASE_URL");
       if (!contentId) throw new Error("Primero genera contenido (necesitas contentId)");
-      const r = await fetch(`${backend}/content/${encodeURIComponent(contentId)}/status`, {
+      const r = await fetch(`${backendBase}/content/${encodeURIComponent(contentId)}/status`, {
         method: "POST",
         headers: { "content-type": "application/json" },
         body: JSON.stringify({ status: newStatus }),
