@@ -1,6 +1,7 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
+import type { CSSProperties } from "react";
 
 const API_BASE = "https://fdlyaer6g6.execute-api.us-east-1.amazonaws.com";
 
@@ -18,14 +19,13 @@ type VersionItem = {
 
 type GalleryItem = { key: string; url: string };
 
-// Si tus items de /content/by-status tienen forma diferente, ajusta este tipo.
 type ByStatusItem = {
   contentId: string;
   versionId?: string;
   sk?: string;
 };
 
-const WARNING_BOX_STYLE: React.CSSProperties = {
+const WARNING_BOX_STYLE: CSSProperties = {
   marginTop: 12,
   marginBottom: 16,
   padding: 12,
@@ -37,13 +37,35 @@ const WARNING_BOX_STYLE: React.CSSProperties = {
 
 const STATUSES: Status[] = ["DRAFT", "IN_REVIEW", "APPROVED", "PUBLISHED"];
 
+function stripTrailingSlashes(s: string) {
+  return (s || "").replace(/\/+$/, "");
+}
+
+async function fetchJsonOrThrow<T = any>(url: string, init?: RequestInit): Promise<T> {
+  const r = await fetch(url, init);
+  const raw = await r.text();
+
+  let parsed: any = null;
+  try {
+    parsed = raw ? JSON.parse(raw) : null;
+  } catch {
+    // no-op (respuesta no JSON)
+  }
+
+  if (!r.ok) {
+    throw new Error(`HTTP_${r.status}: ${raw}`);
+  }
+
+  return (parsed ?? (raw as any)) as T;
+}
+
 export default function Home() {
   // Backend base (Claude + DDB)
-  const backend = process.env.NEXT_PUBLIC_BACKEND_BASE_URL;
-  const backendBase = (backend || "").replace(/\/+$/, "");
-  const canCall = useMemo(() => !!backend, [backend]);
+  const backend = process.env.NEXT_PUBLIC_BACKEND_BASE_URL || "";
+  const backendBase = useMemo(() => stripTrailingSlashes(backend), [backend]);
+  const canCall = !!backendBase;
 
-  // ----------------- Workflow board state (MOVIDO dentro del componente) -----------------
+  // ----------------- Workflow board state -----------------
   const [selectedContentId, setSelectedContentId] = useState<string | null>(null);
   const [currentStatus, setCurrentStatus] = useState<Status | null>(null);
   const [statusError, setStatusError] = useState<string | null>(null);
@@ -76,40 +98,26 @@ export default function Home() {
   const [gallery, setGallery] = useState<GalleryItem[]>([]);
 
   // ----------------- Helpers -----------------
-  function requireBackend() {
-    if (!backend) throw new Error("Falta NEXT_PUBLIC_BACKEND_BASE_URL");
-  }
-
-  async function fetchJsonOrThrow<T = any>(url: string, init?: RequestInit): Promise<T> {
-    const r = await fetch(url, init);
-    const text = await r.text();
-    let j: any = null;
-    try {
-      j = JSON.parse(text);
-    } catch {
-      // ignore
-    }
-    if (!r.ok) throw new Error(`HTTP_${r.status}: ${text}`);
-    return (j ?? (text as any)) as T;
-  }
+  const requireBackend = useCallback(() => {
+    if (!backendBase) throw new Error("Falta NEXT_PUBLIC_BACKEND_BASE_URL");
+  }, [backendBase]);
 
   // ----------------- Gallery -----------------
-  async function refreshGallery() {
+  const refreshGallery = useCallback(async () => {
     try {
       const j: any = await fetchJsonOrThrow(`${API_BASE}/image/recent`, { cache: "no-store" });
       if (j?.ok) setGallery(j.images || []);
     } catch {
       // no bloqueamos UI por galería
     }
-  }
+  }, []);
 
   useEffect(() => {
     refreshGallery();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  }, [refreshGallery]);
 
   // ----------------- Image generation -----------------
-  async function generateImage() {
+  const generateImage = useCallback(async () => {
     setImgError(null);
     setImgLoading(true);
 
@@ -129,139 +137,136 @@ export default function Home() {
     } finally {
       setImgLoading(false);
     }
-  }
+  }, [imgPrompt, imgStyle, refreshGallery]);
 
   // ----------------- Backend: hello -----------------
-  async function apiHello() {
+  const apiHello = useCallback(async () => {
     setError("");
     setResult("Llamando /hello...");
 
     try {
       requireBackend();
-      const r = await fetch(`${backendBase}/hello`, { cache: "no-store" });
-      const t = await r.text();
-      setResult(t);
+      const t = await fetchJsonOrThrow<string>(`${backendBase}/hello`, { cache: "no-store" });
+      setResult(typeof t === "string" ? t : JSON.stringify(t, null, 2));
     } catch (e: any) {
       setError(e?.message ?? String(e));
     }
-  }
+  }, [backendBase, requireBackend]);
 
   // ----------------- Backend: load content -----------------
-  async function loadContent(id: string) {
-    setError("");
+  const loadContent = useCallback(
+    async (id: string) => {
+      setError("");
 
-    try {
-      requireBackend();
+      try {
+        requireBackend();
 
-      const r = await fetch(`${backendBase}/content/${encodeURIComponent(id)}`, {
-        cache: "no-store",
-      });
+        const j: any = await fetchJsonOrThrow(`${backendBase}/content/${encodeURIComponent(id)}`, {
+          cache: "no-store",
+        });
 
-      const j: any = await r.json();
-      if (!j.ok) throw new Error(j.error || "load_failed");
+        if (!j.ok) throw new Error(j.error || "load_failed");
 
-      setVersions(j.versions || []);
-      const st: Status = j.latest?.status || "DRAFT";
-      setStatus(st);
+        setVersions(j.versions || []);
+        const st: Status = j.latest?.status || "DRAFT";
+        setStatus(st);
 
-      // si hay versión, carga el último texto (orden viene del backend: más reciente primero)
-      if (j.versions?.[0]?.text) setInputText(j.versions[0].text);
-    } catch (e: any) {
-      setError(e?.message ?? String(e));
-    }
-  }
+        if (j.versions?.[0]?.text) setInputText(j.versions[0].text);
+      } catch (e: any) {
+        setError(e?.message ?? String(e));
+      }
+    },
+    [backendBase, requireBackend]
+  );
 
   // ----------------- Backend: generate (Claude) -----------------
-  async function runClaude(action: string) {
-    setError("");
-    setLoading(true);
+  const runClaude = useCallback(
+    async (action: string) => {
+      setError("");
+      setLoading(true);
 
-    try {
-      requireBackend();
-
-      const r = await fetch(`${backendBase}/content/generate`, {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({
-          action,
-          inputText,
-          userEmail: "test@example.com",
-          contentId: contentId || undefined,
-        }),
-      });
-
-      const text = await r.text();
-      let j: any = null;
       try {
-        j = JSON.parse(text);
-      } catch {
-        // ignore
-      }
+        requireBackend();
 
-      if (!r.ok) throw new Error(`HTTP_${r.status}: ${text}`);
-      if (!j?.ok) {
-        throw new Error(
-          j?.error ? `${j.error}: ${j.detail || ""}`.trim() : `generate_failed: ${text}`
+        const j: any = await fetchJsonOrThrow(`${backendBase}/content/generate`, {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({
+            action,
+            inputText,
+            userEmail: "test@example.com",
+            contentId: contentId || undefined,
+          }),
+        });
+
+        if (!j?.ok) {
+          throw new Error(j?.error ? `${j.error}: ${j.detail || ""}`.trim() : "generate_failed");
+        }
+
+        setContentId(j.contentId);
+        setInputText(j.text || "");
+        setStatus((j.status as Status) || "DRAFT");
+        setResult(`OK: ${action}`);
+
+        await loadContent(j.contentId);
+      } catch (e: any) {
+        setError(e?.message ?? String(e));
+      } finally {
+        setLoading(false);
+      }
+    },
+    [backendBase, requireBackend, inputText, contentId, loadContent]
+  );
+
+  // ----------------- Backend: status change (editor) -----------------
+  const changeContentStatus = useCallback(
+    async (newStatus: Status) => {
+      setError("");
+      setLoading(true);
+
+      try {
+        requireBackend();
+        if (!contentId) throw new Error("Primero genera contenido (necesitas contentId)");
+
+        const j: any = await fetchJsonOrThrow(
+          `${backendBase}/content/${encodeURIComponent(contentId)}/status`,
+          {
+            method: "POST",
+            headers: { "content-type": "application/json" },
+            body: JSON.stringify({ status: newStatus }),
+          }
         );
+
+        if (!j.ok) throw new Error(j.error || "status_failed");
+
+        setStatus(j.status as Status);
+        setResult(`Estado cambiado a ${j.status}`);
+
+        await loadContent(contentId);
+      } catch (e: any) {
+        setError(e?.message ?? String(e));
+      } finally {
+        setLoading(false);
       }
+    },
+    [backendBase, requireBackend, contentId, loadContent]
+  );
 
-      setContentId(j.contentId);
-      setInputText(j.text || "");
-      setStatus((j.status as Status) || "DRAFT");
-      setResult(`OK: ${action}`);
-
-      await loadContent(j.contentId);
-    } catch (e: any) {
-      setError(e?.message ?? String(e));
-    } finally {
-      setLoading(false);
-    }
-  }
-
-  // ----------------- Backend: status change (para el editor, no el board) -----------------
-  async function changeContentStatus(newStatus: Status) {
-    setError("");
-    setLoading(true);
-
-    try {
-      requireBackend();
-      if (!contentId) throw new Error("Primero genera contenido (necesitas contentId)");
-
-      const r = await fetch(`${backendBase}/content/${encodeURIComponent(contentId)}/status`, {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({ status: newStatus }),
-      });
-
-      const j: any = await r.json();
-      if (!j.ok) throw new Error(j.error || "status_failed");
-
-      setStatus(j.status as Status);
-      setResult(`Estado cambiado a ${j.status}`);
-
-      await loadContent(contentId);
-    } catch (e: any) {
-      setError(e?.message ?? String(e));
-    } finally {
-      setLoading(false);
-    }
-  }
-
-  function revertTo(version: VersionItem) {
+  const revertTo = useCallback((version: VersionItem) => {
     if (version?.text) setInputText(version.text);
-  }
+  }, []);
 
   // ----------------- Workflow board (by status) -----------------
-  async function loadByStatus(st: Status) {
+  const loadByStatus = useCallback(async (st: Status) => {
     const j: any = await fetchJsonOrThrow(`${API_BASE}/content/by-status?status=${st}`, {
       cache: "no-store",
     });
     if (j?.ok) {
       setByStatus((prev) => ({ ...prev, [st]: (j.items || []) as ByStatusItem[] }));
     }
-  }
+  }, []);
 
-  async function refreshAllStatuses() {
+  const refreshAllStatuses = useCallback(async () => {
     setStatusError(null);
     setBoardLoading(true);
     try {
@@ -271,33 +276,37 @@ export default function Home() {
     } finally {
       setBoardLoading(false);
     }
-  }
+  }, [loadByStatus]);
 
-  // OJO: En tu código original había un `changeStatus` duplicado (1 para editor y 1 para board).
-  // Aquí lo dejamos como `changeBoardStatus`.
-  async function changeStatus(contentId: string, nextStatus: Status) {
-  setStatusError(null);
-  try {
-    const r = await fetch(`${API_BASE}/content/${encodeURIComponent(contentId)}/status`, {
-      method: "POST",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify({ nextStatus }),
-    });
-    const j = await r.json();
-    if (!r.ok || !j?.ok) throw new Error(j?.error || j?.message || "status_change_failed");
+  // ✅ nombre correcto y payload consistente: { status: ... }
+  const changeBoardStatus = useCallback(
+    async (id: string, nextStatus: Status) => {
+      setStatusError(null);
+      try {
+        const j: any = await fetchJsonOrThrow(
+          `${API_BASE}/content/${encodeURIComponent(id)}/status`,
+          {
+            method: "POST",
+            headers: { "content-type": "application/json" },
+            body: JSON.stringify({ status: nextStatus }),
+          }
+        );
 
-    setCurrentStatus(nextStatus);
-    await refreshAllStatuses();
-  } catch (e: any) {
-    setStatusError(e?.message || "status_change_failed");
-  }
-}
+        if (!j?.ok) throw new Error(j?.error || j?.message || "status_change_failed");
 
+        setSelectedContentId(id);
+        setCurrentStatus(nextStatus);
+        await refreshAllStatuses();
+      } catch (e: any) {
+        setStatusError(e?.message || "status_change_failed");
+      }
+    },
+    [refreshAllStatuses]
+  );
 
   useEffect(() => {
     refreshAllStatuses();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  }, [refreshAllStatuses]);
 
   // ----------------- UI -----------------
   const nextActionLabel = useMemo(() => {
@@ -375,25 +384,13 @@ export default function Home() {
         <button disabled={loading || !contentId} onClick={() => changeContentStatus("DRAFT")} style={{ padding: 8 }}>
           DRAFT
         </button>
-        <button
-          disabled={loading || !contentId}
-          onClick={() => changeContentStatus("IN_REVIEW")}
-          style={{ padding: 8 }}
-        >
+        <button disabled={loading || !contentId} onClick={() => changeContentStatus("IN_REVIEW")} style={{ padding: 8 }}>
           IN_REVIEW
         </button>
-        <button
-          disabled={loading || !contentId}
-          onClick={() => changeContentStatus("APPROVED")}
-          style={{ padding: 8 }}
-        >
+        <button disabled={loading || !contentId} onClick={() => changeContentStatus("APPROVED")} style={{ padding: 8 }}>
           APPROVED
         </button>
-        <button
-          disabled={loading || !contentId}
-          onClick={() => changeContentStatus("PUBLISHED")}
-          style={{ padding: 8 }}
-        >
+        <button disabled={loading || !contentId} onClick={() => changeContentStatus("PUBLISHED")} style={{ padding: 8 }}>
           PUBLISHED
         </button>
       </div>
