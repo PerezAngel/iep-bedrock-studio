@@ -2,6 +2,16 @@
 
 import { useEffect, useMemo, useState } from "react";
 
+const API_BASE = "https://fdlyaer6g6.execute-api.us-east-1.amazonaws.com";
+
+const [imgPrompt, setImgPrompt] = useState("");
+const [imgStyle, setImgStyle] = useState<"realista" | "anime" | "oleo">("realista");
+const [imgLoading, setImgLoading] = useState(false);
+const [imgError, setImgError] = useState<string | null>(null);
+const [lastImageUrl, setLastImageUrl] = useState<string | null>(null);
+
+const [gallery, setGallery] = useState<Array<{ key: string; url: string }>>([]);
+
 type VersionItem = {
   sk: string;
   createdAt?: string;
@@ -26,6 +36,46 @@ export default function Home() {
   const [error, setError] = useState<string>("");
 
   const canCall = useMemo(() => !!backend, [backend]);
+async function refreshGallery() {
+  try {
+    const r = await fetch(`${API_BASE}/image/recent`);
+    const j = await r.json();
+    if (j?.ok) setGallery(j.images || []);
+  } catch {
+    // no bloqueamos UI por galería
+  }
+}
+
+async function generateImage() {
+  setImgError(null);
+  setImgLoading(true);
+  try {
+    const r = await fetch(`${API_BASE}/image/generate`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ prompt: imgPrompt, style: imgStyle }),
+    });
+
+    const raw = await r.text();
+    let j: any = null;
+    try { j = JSON.parse(raw); } catch {}
+
+    if (!r.ok || !j?.ok) {
+      throw new Error(j?.detail || j?.message || j?.error || raw || "generate_failed");
+    }
+
+    setLastImageUrl(j.url);
+    await refreshGallery();
+  } catch (e: any) {
+    setImgError(e?.message || "generate_failed");
+  } finally {
+    setImgLoading(false);
+  }
+}
+useEffect(() => {
+  refreshGallery();
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+}, []);
 
   async function apiHello() {
     setError("");
@@ -177,6 +227,83 @@ export default function Home() {
         rows={10}
         style={{ width: "100%", padding: 10 }}
       />
+<hr style={{ margin: "24px 0" }} />
+
+<h2 style={{ fontSize: 20, fontWeight: 700 }}>Generación de imágenes (Titan)</h2>
+
+<div style={{ marginTop: 12, marginBottom: 12, padding: 12, background: "#fff7e6", border: "1px solid #ffd591", borderRadius: 6 }}>
+  ⚠️ <b>Aviso</b>: evita lanzar peticiones seguidas. Espera <b>5–10 segundos</b> entre generaciones para evitar saturación.
+</div>
+
+<div style={{ display: "grid", gap: 12, maxWidth: 900 }}>
+  <label>
+    <div style={{ fontSize: 12, opacity: 0.8, marginBottom: 6 }}>Prompt (descripción)</div>
+    <input
+      value={imgPrompt}
+      onChange={(e) => setImgPrompt(e.target.value)}
+      placeholder='Ej: "un robot simpático en una oficina moderna"'
+      style={{ width: "100%", padding: 10, borderRadius: 6, border: "1px solid #ccc" }}
+    />
+  </label>
+
+  <label>
+    <div style={{ fontSize: 12, opacity: 0.8, marginBottom: 6 }}>Estilo</div>
+    <select
+      value={imgStyle}
+      onChange={(e) => setImgStyle(e.target.value as any)}
+      style={{ width: 220, padding: 10, borderRadius: 6, border: "1px solid #ccc" }}
+    >
+      <option value="realista">Realista</option>
+      <option value="anime">Anime</option>
+      <option value="oleo">Óleo</option>
+    </select>
+  </label>
+
+  <button
+    onClick={generateImage}
+    disabled={imgLoading || !imgPrompt.trim()}
+    style={{
+      width: 220,
+      padding: "10px 14px",
+      borderRadius: 8,
+      border: "1px solid #222",
+      background: imgLoading ? "#ddd" : "#111",
+      color: "#fff",
+      cursor: imgLoading ? "not-allowed" : "pointer",
+    }}
+  >
+    {imgLoading ? "Generando..." : "Generar imagen"}
+  </button>
+
+  {imgError && <div style={{ color: "crimson" }}>Error: {imgError}</div>}
+
+  {lastImageUrl && (
+    <div style={{ marginTop: 8 }}>
+      <div style={{ fontSize: 12, opacity: 0.8, marginBottom: 8 }}>Última imagen</div>
+      <a href={lastImageUrl} target="_blank" rel="noreferrer">Abrir / Descargar</a>
+      <div style={{ marginTop: 10 }}>
+        <img src={lastImageUrl} alt="Última imagen generada" style={{ maxWidth: 520, width: "100%", borderRadius: 10, border: "1px solid #ddd" }} />
+      </div>
+    </div>
+  )}
+
+  <div style={{ marginTop: 16 }}>
+    <div style={{ fontSize: 12, opacity: 0.8, marginBottom: 8 }}>Galería (últimas)</div>
+
+    <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(160px, 1fr))", gap: 10 }}>
+      {gallery.map((it) => (
+        <div key={it.key} style={{ border: "1px solid #ddd", borderRadius: 10, padding: 8 }}>
+          <a href={it.url} target="_blank" rel="noreferrer" style={{ fontSize: 12 }}>
+            Abrir / Descargar
+          </a>
+          <div style={{ marginTop: 8 }}>
+            <img src={it.url} alt={it.key} style={{ width: "100%", borderRadius: 8 }} />
+          </div>
+        </div>
+      ))}
+    </div>
+  </div>
+</div>
 
       <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginTop: 12 }}>
         <button disabled={!canCall || loading} onClick={() => runClaude("summarize")} style={{ padding: 8 }}>
