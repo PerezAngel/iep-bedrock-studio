@@ -126,6 +126,22 @@ export default function Home() {
   return (
     <main style={{ padding: 24, fontFamily: "sans-serif", maxWidth: 1000 }}>
       <h1>Bedrock Studio – MVP</h1>
+<div
+  style={{
+    marginTop: 12,
+    marginBottom: 16,
+    padding: 12,
+    background: "#fff7e6",
+    border: "1px solid #ffd591",
+    borderRadius: 6,
+    fontSize: 14,
+  }}
+>
+  ⚠️ <b>Aviso importante</b>: el modelo de IA no admite peticiones seguidas.
+  <br />
+  Tras cada acción (Resumir, Corregir, Variaciones…), espera{" "}
+  <b>5–10 segundos</b> antes de lanzar otra petición para evitar errores.
+</div>
 
       <div style={{ marginBottom: 12 }}>
         <button onClick={apiHello} disabled={!canCall || loading} style={{ padding: 8 }}>
