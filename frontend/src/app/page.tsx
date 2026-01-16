@@ -7,6 +7,7 @@ const API_BASE = "https://fdlyaer6g6.execute-api.us-east-1.amazonaws.com";
 
 type ImgStyle = "realista" | "anime" | "oleo";
 type Status = "DRAFT" | "IN_REVIEW" | "APPROVED" | "PUBLISHED";
+type UserRole = "designer" | "writer" | "approver";
 
 type VersionItem = {
   sk: string;
@@ -42,7 +43,7 @@ async function fetchJsonOrThrow<T = any>(url: string, init?: RequestInit): Promi
 }
 
 /* ------------------------------ UI tokens ------------------------------ */
-type Tone = "neutral" | "primary" | "danger" | "success";
+type Tone = "neutral" | "primary" | "danger" | "success" | "warning";
 
 const UI = {
   bg: "#0b1020",
@@ -52,7 +53,7 @@ const UI = {
   text2: "rgba(255,255,255,0.72)",
   text3: "rgba(255,255,255,0.55)",
   shadow: "0 18px 55px rgba(0,0,0,0.35)",
-  radius: 14,
+  radius: 16,
 };
 
 const PAGE_BG =
@@ -64,21 +65,10 @@ const PAGE_BG =
 function badgeStyle(tone: Tone): CSSProperties {
   const map: Record<Tone, { bg: string; border: string; color: string }> = {
     neutral: { bg: "rgba(255,255,255,0.08)", border: "rgba(255,255,255,0.14)", color: UI.text2 },
-    primary: {
-      bg: "rgba(99,102,241,0.18)",
-      border: "rgba(99,102,241,0.40)",
-      color: "rgba(209,213,255,0.95)",
-    },
-    success: {
-      bg: "rgba(34,197,94,0.15)",
-      border: "rgba(34,197,94,0.35)",
-      color: "rgba(187,255,210,0.95)",
-    },
-    danger: {
-      bg: "rgba(239,68,68,0.16)",
-      border: "rgba(239,68,68,0.40)",
-      color: "rgba(255,205,205,0.95)",
-    },
+    primary: { bg: "rgba(99,102,241,0.18)", border: "rgba(99,102,241,0.40)", color: "rgba(209,213,255,0.95)" },
+    success: { bg: "rgba(34,197,94,0.15)", border: "rgba(34,197,94,0.35)", color: "rgba(187,255,210,0.95)" },
+    danger: { bg: "rgba(239,68,68,0.16)", border: "rgba(239,68,68,0.40)", color: "rgba(255,205,205,0.95)" },
+    warning: { bg: "rgba(245,158,11,0.18)", border: "rgba(245,158,11,0.40)", color: "rgba(255,236,196,0.95)" },
   };
   const c = map[tone];
   return {
@@ -91,7 +81,7 @@ function badgeStyle(tone: Tone): CSSProperties {
     background: c.bg,
     color: c.color,
     fontSize: 12,
-    fontWeight: 700,
+    fontWeight: 800,
     letterSpacing: 0.2,
     whiteSpace: "nowrap",
   };
@@ -102,7 +92,7 @@ function buttonStyle(variant: "primary" | "secondary" | "ghost", disabled?: bool
     borderRadius: 12,
     padding: "10px 12px",
     border: "1px solid transparent",
-    fontWeight: 800,
+    fontWeight: 900,
     fontSize: 13,
     letterSpacing: 0.2,
     cursor: disabled ? "not-allowed" : "pointer",
@@ -120,7 +110,6 @@ function buttonStyle(variant: "primary" | "secondary" | "ghost", disabled?: bool
       boxShadow: "0 12px 30px rgba(99,102,241,0.18)",
     };
   }
-
   if (variant === "secondary") {
     return {
       ...base,
@@ -129,7 +118,6 @@ function buttonStyle(variant: "primary" | "secondary" | "ghost", disabled?: bool
       borderColor: "rgba(255,255,255,0.14)",
     };
   }
-
   return {
     ...base,
     color: UI.text2,
@@ -162,6 +150,7 @@ function softCardStyle(): CSSProperties {
 function statusTone(s: Status): Tone {
   if (s === "PUBLISHED") return "success";
   if (s === "APPROVED") return "primary";
+  if (s === "IN_REVIEW") return "neutral";
   return "neutral";
 }
 
@@ -172,7 +161,14 @@ export default function Home() {
   const backendBase = useMemo(() => stripTrailingSlashes(backend), [backend]);
   const canCall = !!backendBase;
 
-  const [tab, setTab] = useState<TabKey>("editor");
+  const [tab, setTab] = useState<TabKey>("images");
+
+  // ✅ FIX: hooks deben ir dentro del componente
+  const [userGroups, setUserGroups] = useState<string[]>([]);
+  const [authLoading, setAuthLoading] = useState<boolean>(true);
+
+  const isCreator = userGroups.includes("designers") || userGroups.includes("writers");
+  const isApprover = userGroups.includes("approvers");
 
   // Workflow board
   const [selectedContentId, setSelectedContentId] = useState<string | null>(null);
@@ -188,9 +184,7 @@ export default function Home() {
 
   // Content states
   const [contentId, setContentId] = useState<string>("");
-  const [inputText, setInputText] = useState<string>(
-    "Escribe aquí tu texto. Luego prueba Corregir o Resumir."
-  );
+  const [inputText, setInputText] = useState<string>("Escribe aquí tu texto. Luego prueba Corregir o Resumir.");
   const [status, setStatus] = useState<Status>("DRAFT");
   const [result, setResult] = useState<string>("");
   const [versions, setVersions] = useState<VersionItem[]>([]);
@@ -209,6 +203,44 @@ export default function Home() {
     if (!backendBase) throw new Error("Falta NEXT_PUBLIC_BACKEND_BASE_URL");
   }, [backendBase]);
 
+  // ✅ FIX: carga de grupos dentro de useEffect del componente
+  useEffect(() => {
+    let alive = true;
+
+    (async () => {
+      try {
+        setAuthLoading(true);
+        const { fetchAuthSession } = await import("aws-amplify/auth");
+        const session = await fetchAuthSession();
+        const groups = (session.tokens?.idToken?.payload?.["cognito:groups"] as unknown) || [];
+        if (!alive) return;
+        setUserGroups(Array.isArray(groups) ? (groups as string[]) : []);
+      } catch {
+        if (!alive) return;
+        setUserGroups([]);
+      } finally {
+        if (!alive) return;
+        setAuthLoading(false);
+      }
+    })();
+
+    return () => {
+      alive = false;
+    };
+  }, []);
+
+  const SubtleHint = ({ children }: { children: ReactNode }) => (
+    <div style={{ color: UI.text3, fontSize: 12, lineHeight: 1.4 }}>{children}</div>
+  );
+
+  const SectionTitle = ({ title, right }: { title: string; right?: ReactNode }) => (
+    <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12, marginBottom: 10 }}>
+      <div style={{ fontSize: 16, fontWeight: 950, letterSpacing: -0.2, color: UI.text }}>{title}</div>
+      {right}
+    </div>
+  );
+
+  // ----------------- Gallery -----------------
   const refreshGallery = useCallback(async () => {
     try {
       const j: any = await fetchJsonOrThrow(`${API_BASE}/image/recent`, { cache: "no-store" });
@@ -222,6 +254,7 @@ export default function Home() {
     refreshGallery();
   }, [refreshGallery]);
 
+  // ----------------- Image generation -----------------
   const generateImage = useCallback(async () => {
     setImgError(null);
     setImgLoading(true);
@@ -243,18 +276,7 @@ export default function Home() {
     }
   }, [imgPrompt, imgStyle, refreshGallery]);
 
-  const apiHello = useCallback(async () => {
-    setError("");
-    setResult("Llamando /hello...");
-    try {
-      requireBackend();
-      const t = await fetchJsonOrThrow<string>(`${backendBase}/hello`, { cache: "no-store" });
-      setResult(typeof t === "string" ? t : JSON.stringify(t, null, 2));
-    } catch (e: any) {
-      setError(e?.message ?? String(e));
-    }
-  }, [backendBase, requireBackend]);
-
+  // ----------------- Backend: load content -----------------
   const loadContent = useCallback(
     async (id: string) => {
       setError("");
@@ -278,6 +300,7 @@ export default function Home() {
     [backendBase, requireBackend]
   );
 
+  // ----------------- Backend: generate (Claude) -----------------
   const runClaude = useCallback(
     async (action: string) => {
       setError("");
@@ -313,6 +336,7 @@ export default function Home() {
     [backendBase, requireBackend, inputText, contentId, loadContent]
   );
 
+  // ----------------- Backend: status change (editor) -----------------
   const changeContentStatus = useCallback(
     async (newStatus: Status) => {
       setError("");
@@ -345,6 +369,7 @@ export default function Home() {
     if (version?.text) setInputText(version.text);
   }, []);
 
+  // ----------------- Workflow board (by status) -----------------
   const loadByStatus = useCallback(async (st: Status) => {
     const j: any = await fetchJsonOrThrow(`${API_BASE}/content/by-status?status=${st}`, { cache: "no-store" });
     if (j?.ok) setByStatus((prev) => ({ ...prev, [st]: (j.items || []) as ByStatusItem[] }));
@@ -362,7 +387,8 @@ export default function Home() {
     }
   }, [loadByStatus]);
 
-  const changeBoardStatus = useCallback(
+  // ✅ FIX: tú llamas a changeStatus(...) pero tu función se llama changeBoardStatus
+  const changeStatus = useCallback(
     async (id: string, nextStatus: Status) => {
       setStatusError(null);
       try {
@@ -396,41 +422,72 @@ export default function Home() {
     return null;
   }, [selectedContentId, currentStatus]);
 
-  const envBadge = canCall
-    ? { tone: "success" as Tone, text: "Backend configurado" }
-    : { tone: "danger" as Tone, text: "Falta NEXT_PUBLIC_BACKEND_BASE_URL" };
-
-  const SubtleHint = ({ children }: { children: ReactNode }) => (
-    <div style={{ color: UI.text3, fontSize: 12, lineHeight: 1.4 }}>{children}</div>
-  );
-
-  const SectionTitle = ({ title, right }: { title: string; right?: ReactNode }) => (
-    <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12, marginBottom: 10 }}>
-      <div style={{ fontSize: 14, fontWeight: 950, letterSpacing: 0.2, color: UI.text }}>{title}</div>
-      {right}
-    </div>
-  );
-
   return (
     <main style={{ minHeight: "100vh", padding: 24, background: PAGE_BG, color: UI.text }}>
+      <style jsx global>{`
+        html,
+        body {
+          margin: 0;
+          padding: 0;
+          background: ${UI.bg};
+        }
+        *,
+        *::before,
+        *::after {
+          box-sizing: border-box;
+        }
+        .appGrid {
+          display: grid;
+          grid-template-columns: 360px 1fr;
+          gap: 16px;
+        }
+        .imgControlsGrid {
+          display: grid;
+          grid-template-columns: 1fr 220px;
+          gap: 12px;
+          align-items: end;
+        }
+        .tabRow {
+          display: flex;
+          gap: 8px;
+          flex-wrap: wrap;
+        }
+        @media (max-width: 980px) {
+          .appGrid {
+            grid-template-columns: 1fr;
+          }
+        }
+        @media (max-width: 820px) {
+          .imgControlsGrid {
+            grid-template-columns: 1fr;
+          }
+        }
+      `}</style>
+
       <div style={{ maxWidth: 1160, margin: "0 auto" }}>
         {/* Header */}
-        <div style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between", gap: 12, marginBottom: 16 }}>
+        <div style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between", gap: 12, marginBottom: 16, flexWrap: "wrap" }}>
           <div>
-            <div style={{ fontSize: 24, fontWeight: 950, letterSpacing: -0.2 }}>Bedrock Studio</div>
-            <div style={{ marginTop: 6, color: UI.text2, fontSize: 13 }}>MVP · Editor + Workflow + Imágenes</div>
+            <div style={{ fontSize: 24, fontWeight: 950, letterSpacing: -0.2 }}>
+              IEP - Caso Práctico 3 - Pérez Suárez, Ángel M.
+            </div>
           </div>
 
-          <div style={{ display: "flex", gap: 10, alignItems: "center" }}>
-            <span style={badgeStyle(envBadge.tone)}>{envBadge.text}</span>
-            <button onClick={apiHello} disabled={!canCall || loading} style={buttonStyle("secondary", !canCall || loading)}>
-              Probar /hello
-            </button>
+          {/* Roles (debug visual) */}
+          <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
+            {authLoading ? (
+              <span style={badgeStyle("neutral")}>Cargando permisos…</span>
+            ) : (
+              <>
+                <span style={badgeStyle(isCreator ? "success" : "neutral")}>Creator: {isCreator ? "sí" : "no"}</span>
+                <span style={badgeStyle(isApprover ? "success" : "neutral")}>Approver: {isApprover ? "sí" : "no"}</span>
+              </>
+            )}
           </div>
         </div>
 
         {/* Tabs */}
-        <div style={{ display: "flex", gap: 8, marginBottom: 14, flexWrap: "wrap" }}>
+        <div className="tabRow" style={{ marginBottom: 14 }}>
           {([
             { key: "editor", label: "Editor" },
             { key: "workflow", label: "Workflow" },
@@ -454,48 +511,72 @@ export default function Home() {
           })}
         </div>
 
-        {/* Notice */}
+        {/* Aviso MUY visible */}
         <div
           style={{
             ...softCardStyle(),
             padding: 14,
             marginBottom: 16,
-            background: "linear-gradient(180deg, rgba(255,255,255,0.09), rgba(255,255,255,0.05))",
+            border: "1px solid rgba(245,158,11,0.55)",
+            background: "linear-gradient(180deg, rgba(245,158,11,0.22), rgba(239,68,68,0.10)), rgba(255,255,255,0.04)",
+            boxShadow: "0 18px 55px rgba(245,158,11,0.10)",
           }}
         >
-          <div style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between", gap: 12 }}>
+          <div style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between", gap: 12, flexWrap: "wrap" }}>
             <div>
-              <div style={{ fontWeight: 950, fontSize: 13 }}>Ritmo de peticiones</div>
-              <div style={{ marginTop: 6, color: UI.text2, fontSize: 13, lineHeight: 1.4 }}>
-                Evita disparar acciones seguidas. Entre llamadas al modelo espera <b>5–10s</b>.
+              <div style={{ fontWeight: 950, fontSize: 14 }}>⚠️ Ritmo de peticiones (IMPORTANTE)</div>
+              <div style={{ marginTop: 6, color: "rgba(255,244,214,0.95)", fontSize: 13, lineHeight: 1.45 }}>
+                Evita disparar acciones seguidas. Entre llamadas al modelo espera <b>5–10s</b>. Si fuerzas el API, fallará.
               </div>
+              {!canCall && (
+                <div style={{ marginTop: 10 }}>
+                  <span style={badgeStyle("danger")}>Falta NEXT_PUBLIC_BACKEND_BASE_URL</span>
+                  <div style={{ marginTop: 6, color: UI.text3, fontSize: 12 }}>Sin backend no podrás generar texto ni cargar historial del editor.</div>
+                </div>
+              )}
             </div>
-            <span style={badgeStyle("primary")}>Menos spam, más éxito</span>
+            <span style={badgeStyle("warning")}>No spamear el endpoint</span>
           </div>
         </div>
 
-        <div style={{ display: "grid", gridTemplateColumns: "360px 1fr", gap: 16 }}>
+        {/* ✅ FIX: tus botones de transición por rol usan changeStatus y flags correctos */}
+        <div style={{ display: "flex", gap: 10, marginBottom: 16, flexWrap: "wrap" }}>
+          {currentStatus === "DRAFT" && selectedContentId && isCreator && (
+            <button style={buttonStyle("primary", boardLoading)} onClick={() => changeStatus(selectedContentId, "IN_REVIEW")} disabled={boardLoading}>
+              Enviar a revisión
+            </button>
+          )}
+
+          {currentStatus === "IN_REVIEW" && selectedContentId && isApprover && (
+            <button style={buttonStyle("primary", boardLoading)} onClick={() => changeStatus(selectedContentId, "APPROVED")} disabled={boardLoading}>
+              Aprobar
+            </button>
+          )}
+
+          {currentStatus === "APPROVED" && selectedContentId && isApprover && (
+            <button style={buttonStyle("primary", boardLoading)} onClick={() => changeStatus(selectedContentId, "PUBLISHED")} disabled={boardLoading}>
+              Publicar
+            </button>
+          )}
+
+          {selectedContentId && currentStatus && !authLoading && !isCreator && !isApprover && (
+            <span style={badgeStyle("danger")}>No tienes permisos para cambiar estado</span>
+          )}
+        </div>
+
+        <div className="appGrid">
           {/* Left panel */}
           <aside style={{ ...softCardStyle(), padding: 14 }}>
             <SectionTitle title="Contenido" right={<span style={badgeStyle(statusTone(status))}>{status}</span>} />
 
             <label style={{ display: "grid", gap: 6, marginBottom: 10 }}>
-              <span style={{ color: UI.text2, fontSize: 12, fontWeight: 800 }}>contentId</span>
-              <input
-                value={contentId}
-                onChange={(e) => setContentId(e.target.value)}
-                placeholder="Se rellena al generar"
-                style={inputStyle()}
-              />
+              <span style={{ color: UI.text2, fontSize: 12, fontWeight: 900 }}>contentId</span>
+              <input value={contentId} onChange={(e) => setContentId(e.target.value)} placeholder="Se rellena al generar" style={inputStyle()} />
               <SubtleHint>Usa “Cargar historial” si ya tienes un contentId.</SubtleHint>
             </label>
 
             <div style={{ display: "flex", gap: 8, marginBottom: 12, flexWrap: "wrap" }}>
-              <button
-                onClick={() => contentId && loadContent(contentId)}
-                disabled={!canCall || loading || !contentId}
-                style={buttonStyle("secondary", !canCall || loading || !contentId)}
-              >
+              <button onClick={() => contentId && loadContent(contentId)} disabled={!canCall || loading || !contentId} style={buttonStyle("secondary", !canCall || loading || !contentId)}>
                 Cargar historial
               </button>
 
@@ -540,9 +621,9 @@ export default function Home() {
                 return (
                   <button
                     key={s}
-                    disabled={loading || !contentId}
+                    disabled={loading || !contentId || !canCall}
                     onClick={() => changeContentStatus(s)}
-                    style={{ ...buttonStyle(active ? "primary" : "secondary", loading || !contentId), padding: "10px 10px" }}
+                    style={{ ...buttonStyle(active ? "primary" : "secondary", loading || !contentId || !canCall), padding: "10px 10px" }}
                   >
                     {s}
                   </button>
@@ -580,32 +661,14 @@ export default function Home() {
                 {(result || error) && (
                   <div style={{ display: "grid", gap: 10, marginTop: 12 }}>
                     {result && (
-                      <div
-                        style={{
-                          borderRadius: 14,
-                          border: "1px solid rgba(34,197,94,0.25)",
-                          background: "rgba(34,197,94,0.10)",
-                          padding: 12,
-                          color: "rgba(209,255,225,0.95)",
-                          fontSize: 13,
-                        }}
-                      >
+                      <div style={{ borderRadius: 14, border: "1px solid rgba(34,197,94,0.25)", background: "rgba(34,197,94,0.10)", padding: 12, color: "rgba(209,255,225,0.95)", fontSize: 13 }}>
                         <div style={{ fontWeight: 950, marginBottom: 6 }}>Resultado</div>
                         <pre style={{ margin: 0, whiteSpace: "pre-wrap", color: "inherit" }}>{result}</pre>
                       </div>
                     )}
 
                     {error && (
-                      <div
-                        style={{
-                          borderRadius: 14,
-                          border: "1px solid rgba(239,68,68,0.30)",
-                          background: "rgba(239,68,68,0.12)",
-                          padding: 12,
-                          color: "rgba(255,214,214,0.95)",
-                          fontSize: 13,
-                        }}
-                      >
+                      <div style={{ borderRadius: 14, border: "1px solid rgba(239,68,68,0.30)", background: "rgba(239,68,68,0.12)", padding: 12, color: "rgba(255,214,214,0.95)", fontSize: 13 }}>
                         <div style={{ fontWeight: 950, marginBottom: 6 }}>Error</div>
                         <pre style={{ margin: 0, whiteSpace: "pre-wrap", color: "inherit" }}>{error}</pre>
                       </div>
@@ -620,7 +683,7 @@ export default function Home() {
                 <SectionTitle
                   title="Workflow (Kanban)"
                   right={
-                    <div style={{ display: "flex", gap: 10, alignItems: "center" }}>
+                    <div style={{ display: "flex", gap: 10, alignItems: "center", flexWrap: "wrap" }}>
                       {statusError && <span style={badgeStyle("danger")}>Error: {statusError}</span>}
                       <button onClick={refreshAllStatuses} disabled={boardLoading} style={buttonStyle("secondary", boardLoading)}>
                         {boardLoading ? "Actualizando..." : "Refrescar"}
@@ -634,32 +697,19 @@ export default function Home() {
                     <span style={badgeStyle("primary")}>Seleccionado: {selectedContentId}</span>
                     <span style={badgeStyle(statusTone(currentStatus))}>Estado: {currentStatus}</span>
                     {nextActionLabel && (
-                      <button
-                        onClick={() => changeBoardStatus(selectedContentId, nextActionLabel.next)}
-                        disabled={!selectedContentId || boardLoading}
-                        style={buttonStyle("primary", !selectedContentId || boardLoading)}
-                      >
+                      <button onClick={() => changeStatus(selectedContentId, nextActionLabel.next)} disabled={!selectedContentId || boardLoading} style={buttonStyle("primary", !selectedContentId || boardLoading)}>
                         {nextActionLabel.label}
                       </button>
                     )}
                   </div>
                 )}
 
-                <div style={{ display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: 12 }}>
+                <div style={{ display: "grid", gridTemplateColumns: "repeat(4, minmax(0, 1fr))", gap: 12 }}>
                   {STATUSES.map((st) => (
-                    <div
-                      key={st}
-                      style={{
-                        borderRadius: 14,
-                        border: `1px solid ${UI.border}`,
-                        background: "rgba(0,0,0,0.18)",
-                        padding: 10,
-                        minHeight: 260,
-                      }}
-                    >
+                    <div key={st} style={{ borderRadius: 14, border: `1px solid ${UI.border}`, background: "rgba(0,0,0,0.18)", padding: 10, minHeight: 260, minWidth: 0 }}>
                       <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 10 }}>
                         <span style={badgeStyle(statusTone(st))}>{st}</span>
-                        <span style={{ color: UI.text3, fontSize: 12, fontWeight: 800 }}>{byStatus[st].length}</span>
+                        <span style={{ color: UI.text3, fontSize: 12, fontWeight: 900 }}>{byStatus[st].length}</span>
                       </div>
 
                       <div style={{ display: "grid", gap: 8 }}>
@@ -681,6 +731,7 @@ export default function Home() {
                                 background: active ? "rgba(99,102,241,0.12)" : "rgba(255,255,255,0.06)",
                                 color: UI.text,
                                 cursor: "pointer",
+                                minWidth: 0,
                               }}
                             >
                               <div style={{ fontSize: 12, fontWeight: 950, letterSpacing: 0.2 }}>contentId</div>
@@ -690,9 +741,7 @@ export default function Home() {
                         })}
 
                         {byStatus[st].length === 0 && (
-                          <div style={{ color: UI.text3, fontSize: 12, padding: 10, borderRadius: 12, border: `1px dashed ${UI.border}` }}>
-                            — vacío —
-                          </div>
+                          <div style={{ color: UI.text3, fontSize: 12, padding: 10, borderRadius: 12, border: `1px dashed ${UI.border}` }}>— vacío —</div>
                         )}
                       </div>
                     </div>
@@ -705,25 +754,16 @@ export default function Home() {
               <div style={{ ...softCardStyle(), padding: 14 }}>
                 <SectionTitle title="Generación de imágenes" right={<span style={badgeStyle("neutral")}>Titan</span>} />
 
-                <div style={{ display: "grid", gridTemplateColumns: "1fr 220px", gap: 12, alignItems: "end" }}>
-                  <label style={{ display: "grid", gap: 6 }}>
-                    <span style={{ color: UI.text2, fontSize: 12, fontWeight: 800 }}>Prompt</span>
-                    <input
-                      value={imgPrompt}
-                      onChange={(e) => setImgPrompt(e.target.value)}
-                      placeholder='Ej: "un robot simpático en una oficina moderna"'
-                      style={inputStyle()}
-                    />
+                <div className="imgControlsGrid">
+                  <label style={{ display: "grid", gap: 6, minWidth: 0 }}>
+                    <span style={{ color: UI.text2, fontSize: 12, fontWeight: 900 }}>Prompt</span>
+                    <input value={imgPrompt} onChange={(e) => setImgPrompt(e.target.value)} placeholder='Ej: "un robot simpático en una oficina moderna"' style={inputStyle()} />
                     <SubtleHint>Cuanto más específico (luz, cámara, contexto), mejor.</SubtleHint>
                   </label>
 
-                  <label style={{ display: "grid", gap: 6 }}>
-                    <span style={{ color: UI.text2, fontSize: 12, fontWeight: 800 }}>Estilo</span>
-                    <select
-                      value={imgStyle}
-                      onChange={(e) => setImgStyle(e.target.value as ImgStyle)}
-                      style={{ ...inputStyle(), cursor: "pointer" }}
-                    >
+                  <label style={{ display: "grid", gap: 6, minWidth: 0 }}>
+                    <span style={{ color: UI.text2, fontSize: 12, fontWeight: 900 }}>Estilo</span>
+                    <select value={imgStyle} onChange={(e) => setImgStyle(e.target.value as ImgStyle)} style={{ ...inputStyle(), cursor: "pointer" }}>
                       <option value="realista">Realista</option>
                       <option value="anime">Anime</option>
                       <option value="oleo">Óleo</option>
@@ -736,19 +776,14 @@ export default function Home() {
                     {imgLoading ? "Generando…" : "Generar imagen"}
                   </button>
                   {imgError && <span style={badgeStyle("danger")}>{imgError}</span>}
-                  <span style={badgeStyle("neutral")}>Espera 5–10s entre generaciones</span>
+                  <span style={badgeStyle("warning")}>Espera 5–10s entre generaciones</span>
                 </div>
 
                 {lastImageUrl && (
                   <div style={{ marginTop: 14, display: "grid", gap: 10 }}>
-                    <div style={{ display: "flex", gap: 10, alignItems: "center", justifyContent: "space-between" }}>
+                    <div style={{ display: "flex", gap: 10, alignItems: "center", justifyContent: "space-between", flexWrap: "wrap" }}>
                       <span style={badgeStyle("primary")}>Última imagen</span>
-                      <a
-                        href={lastImageUrl}
-                        target="_blank"
-                        rel="noreferrer"
-                        style={{ color: "rgba(209,213,255,0.95)", fontSize: 13, fontWeight: 900, textDecoration: "none" }}
-                      >
+                      <a href={lastImageUrl} target="_blank" rel="noreferrer" style={{ color: "rgba(209,213,255,0.95)", fontSize: 13, fontWeight: 950, textDecoration: "none" }}>
                         Abrir / Descargar
                       </a>
                     </div>
@@ -756,13 +791,7 @@ export default function Home() {
                     <img
                       src={lastImageUrl}
                       alt="Última imagen generada"
-                      style={{
-                        width: "100%",
-                        maxWidth: 720,
-                        borderRadius: 16,
-                        border: `1px solid ${UI.border}`,
-                        boxShadow: UI.shadow,
-                      }}
+                      style={{ width: "100%", maxWidth: 720, borderRadius: 16, border: `1px solid ${UI.border}`, boxShadow: UI.shadow }}
                     />
                   </div>
                 )}
@@ -772,28 +801,11 @@ export default function Home() {
 
                   <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(170px, 1fr))", gap: 12 }}>
                     {gallery.map((it) => (
-                      <div
-                        key={it.key}
-                        style={{
-                          borderRadius: 16,
-                          border: `1px solid ${UI.border}`,
-                          background: "rgba(255,255,255,0.06)",
-                          padding: 10,
-                        }}
-                      >
-                        <a
-                          href={it.url}
-                          target="_blank"
-                          rel="noreferrer"
-                          style={{ color: UI.text2, fontSize: 12, fontWeight: 900, textDecoration: "none" }}
-                        >
+                      <div key={it.key} style={{ borderRadius: 16, border: `1px solid ${UI.border}`, background: "rgba(255,255,255,0.06)", padding: 10 }}>
+                        <a href={it.url} target="_blank" rel="noreferrer" style={{ color: UI.text2, fontSize: 12, fontWeight: 950, textDecoration: "none" }}>
                           Abrir / Descargar
                         </a>
-                        <img
-                          src={it.url}
-                          alt={it.key}
-                          style={{ width: "100%", borderRadius: 12, marginTop: 10, border: `1px solid ${UI.border}` }}
-                        />
+                        <img src={it.url} alt={it.key} style={{ width: "100%", borderRadius: 12, marginTop: 10, border: `1px solid ${UI.border}` }} />
                       </div>
                     ))}
                   </div>
@@ -808,10 +820,10 @@ export default function Home() {
                 <div style={{ display: "grid", gap: 10 }}>
                   {versions.map((v) => (
                     <div key={v.sk} style={{ borderRadius: 16, border: `1px solid ${UI.border}`, background: "rgba(255,255,255,0.06)", padding: 12 }}>
-                      <div style={{ display: "flex", justifyContent: "space-between", gap: 12, alignItems: "center" }}>
+                      <div style={{ display: "flex", justifyContent: "space-between", gap: 12, alignItems: "center", flexWrap: "wrap" }}>
                         <div style={{ display: "grid", gap: 6 }}>
                           <div style={{ fontWeight: 950, fontSize: 13 }}>
-                            {v.action || "—"} <span style={{ color: UI.text3, fontWeight: 800, marginLeft: 6 }}>{v.createdAt || ""}</span>
+                            {v.action || "—"} <span style={{ color: UI.text3, fontWeight: 900, marginLeft: 6 }}>{v.createdAt || ""}</span>
                           </div>
                           {v.status && <span style={badgeStyle(statusTone(v.status as Status))}>{v.status}</span>}
                         </div>
@@ -821,16 +833,12 @@ export default function Home() {
                         </button>
                       </div>
 
-                      <pre style={{ whiteSpace: "pre-wrap", marginTop: 10, color: UI.text2, fontSize: 13, lineHeight: 1.45 }}>
-                        {v.text}
-                      </pre>
+                      <pre style={{ whiteSpace: "pre-wrap", marginTop: 10, color: UI.text2, fontSize: 13, lineHeight: 1.45 }}>{v.text}</pre>
                     </div>
                   ))}
 
                   {versions.length === 0 && (
-                    <div style={{ color: UI.text3, fontSize: 13, padding: 12, borderRadius: 14, border: `1px dashed ${UI.border}` }}>
-                      No hay versiones aún.
-                    </div>
+                    <div style={{ color: UI.text3, fontSize: 13, padding: 12, borderRadius: 14, border: `1px dashed ${UI.border}` }}>No hay versiones aún.</div>
                   )}
                 </div>
               </div>
