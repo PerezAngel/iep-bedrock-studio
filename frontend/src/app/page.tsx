@@ -2,7 +2,6 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import type { CSSProperties, ReactNode } from "react";
 
-
 const API_BASE = "https://fdlyaer6g6.execute-api.us-east-1.amazonaws.com";
 
 type ImgStyle = "realista" | "anime" | "oleo";
