@@ -7,7 +7,6 @@ const API_BASE = "https://fdlyaer6g6.execute-api.us-east-1.amazonaws.com";
 
 type ImgStyle = "realista" | "anime" | "oleo";
 type Status = "DRAFT" | "IN_REVIEW" | "APPROVED" | "PUBLISHED";
-type UserRole = "designer" | "writer" | "approver";
 
 type VersionItem = {
   sk: string;
@@ -35,10 +34,19 @@ async function fetchJsonOrThrow<T = any>(url: string, init?: RequestInit): Promi
   try {
     parsed = raw ? JSON.parse(raw) : null;
   } catch {
-    // respuesta no JSON
+    // Respuesta no JSON
   }
 
-  if (!r.ok) throw new Error(`HTTP_${r.status}: ${raw}`);
+  if (!r.ok) {
+    // Intenta sacar error “bonito” si viene como {message,...}
+    const msg =
+      parsed?.message ||
+      parsed?.error ||
+      parsed?.detail ||
+      (raw ? String(raw).slice(0, 300) : "");
+    throw new Error(`HTTP_${r.status}${msg ? `: ${msg}` : ""}`);
+  }
+
   return (parsed ?? (raw as any)) as T;
 }
 
@@ -150,23 +158,24 @@ function softCardStyle(): CSSProperties {
 function statusTone(s: Status): Tone {
   if (s === "PUBLISHED") return "success";
   if (s === "APPROVED") return "primary";
-  if (s === "IN_REVIEW") return "neutral";
   return "neutral";
 }
 
 type TabKey = "editor" | "workflow" | "images" | "history";
 
 export default function Home() {
+  // Backend “texto” (lambda de contenido). Mantengo tu patrón env var.
   const backend = process.env.NEXT_PUBLIC_BACKEND_BASE_URL || "";
   const backendBase = useMemo(() => stripTrailingSlashes(backend), [backend]);
   const canCall = !!backendBase;
 
   const [tab, setTab] = useState<TabKey>("images");
 
-  // ✅ FIX: hooks deben ir dentro del componente
+  // Auth / grupos
   const [userGroups, setUserGroups] = useState<string[]>([]);
   const [authLoading, setAuthLoading] = useState<boolean>(true);
 
+  // ✅ SOLO una vez (evita duplicar const y errores TS)
   const isCreator = userGroups.includes("designers") || userGroups.includes("writers");
   const isApprover = userGroups.includes("approvers");
 
@@ -182,7 +191,7 @@ export default function Home() {
     PUBLISHED: [],
   });
 
-  // Content states
+  // Content states (editor)
   const [contentId, setContentId] = useState<string>("");
   const [inputText, setInputText] = useState<string>("Escribe aquí tu texto. Luego prueba Corregir o Resumir.");
   const [status, setStatus] = useState<Status>("DRAFT");
@@ -203,26 +212,36 @@ export default function Home() {
     if (!backendBase) throw new Error("Falta NEXT_PUBLIC_BACKEND_BASE_URL");
   }, [backendBase]);
 
-  // ✅ FIX: carga de grupos dentro de useEffect del componente
+  /**
+   * =========================
+   * Auth: obtener grupos
+   * =========================
+   * Arreglo crítico: tenías un useEffect dentro de otro, y un loadMe suelto.
+   * Aquí dejamos SOLO el fetchAuthSession (Amplify) como fuente de verdad.
+   */
   useEffect(() => {
-    let alive = true;
+  let alive = true;
 
-    (async () => {
-      try {
-        setAuthLoading(true);
-        const { fetchAuthSession } = await import("aws-amplify/auth");
-        const session = await fetchAuthSession();
-        const groups = (session.tokens?.idToken?.payload?.["cognito:groups"] as unknown) || [];
-        if (!alive) return;
-        setUserGroups(Array.isArray(groups) ? (groups as string[]) : []);
-      } catch {
-        if (!alive) return;
-        setUserGroups([]);
-      } finally {
-        if (!alive) return;
-        setAuthLoading(false);
-      }
-    })();
+  (async () => {
+    try {
+      const r = await fetch(`${API_BASE}/me`, { cache: "no-store" });
+      const j = await r.json();
+
+      if (!alive) return;
+      setUserGroups(j?.ok && Array.isArray(j.groups) ? j.groups : []);
+    } catch {
+      if (!alive) return;
+      setUserGroups([]);
+    } finally {
+      if (!alive) return;
+      setAuthLoading(false);
+    }
+  })();
+
+  return () => {
+    alive = false;
+  };
+}, []);
 
     return () => {
       alive = false;
@@ -387,7 +406,7 @@ export default function Home() {
     }
   }, [loadByStatus]);
 
-  // ✅ FIX: tú llamas a changeStatus(...) pero tu función se llama changeBoardStatus
+  // Board: cambiar estado (botones workflow)
   const changeStatus = useCallback(
     async (id: string, nextStatus: Status) => {
       setStatusError(null);
@@ -511,7 +530,7 @@ export default function Home() {
           })}
         </div>
 
-        {/* Aviso MUY visible */}
+        {/* Aviso */}
         <div
           style={{
             ...softCardStyle(),
@@ -531,7 +550,9 @@ export default function Home() {
               {!canCall && (
                 <div style={{ marginTop: 10 }}>
                   <span style={badgeStyle("danger")}>Falta NEXT_PUBLIC_BACKEND_BASE_URL</span>
-                  <div style={{ marginTop: 6, color: UI.text3, fontSize: 12 }}>Sin backend no podrás generar texto ni cargar historial del editor.</div>
+                  <div style={{ marginTop: 6, color: UI.text3, fontSize: 12 }}>
+                    Sin backend no podrás generar texto ni cargar historial del editor.
+                  </div>
                 </div>
               )}
             </div>
@@ -539,7 +560,7 @@ export default function Home() {
           </div>
         </div>
 
-        {/* ✅ FIX: tus botones de transición por rol usan changeStatus y flags correctos */}
+        {/* Botones de transición por rol (fuera de runClaude, en el return) */}
         <div style={{ display: "flex", gap: 10, marginBottom: 16, flexWrap: "wrap" }}>
           {currentStatus === "DRAFT" && selectedContentId && isCreator && (
             <button style={buttonStyle("primary", boardLoading)} onClick={() => changeStatus(selectedContentId, "IN_REVIEW")} disabled={boardLoading}>
@@ -571,12 +592,21 @@ export default function Home() {
 
             <label style={{ display: "grid", gap: 6, marginBottom: 10 }}>
               <span style={{ color: UI.text2, fontSize: 12, fontWeight: 900 }}>contentId</span>
-              <input value={contentId} onChange={(e) => setContentId(e.target.value)} placeholder="Se rellena al generar" style={inputStyle()} />
+              <input
+                value={contentId}
+                onChange={(e) => setContentId(e.target.value)}
+                placeholder="Se rellena al generar"
+                style={inputStyle()}
+              />
               <SubtleHint>Usa “Cargar historial” si ya tienes un contentId.</SubtleHint>
             </label>
 
             <div style={{ display: "flex", gap: 8, marginBottom: 12, flexWrap: "wrap" }}>
-              <button onClick={() => contentId && loadContent(contentId)} disabled={!canCall || loading || !contentId} style={buttonStyle("secondary", !canCall || loading || !contentId)}>
+              <button
+                onClick={() => contentId && loadContent(contentId)}
+                disabled={!canCall || loading || !contentId}
+                style={buttonStyle("secondary", !canCall || loading || !contentId)}
+              >
                 Cargar historial
               </button>
 
@@ -757,7 +787,12 @@ export default function Home() {
                 <div className="imgControlsGrid">
                   <label style={{ display: "grid", gap: 6, minWidth: 0 }}>
                     <span style={{ color: UI.text2, fontSize: 12, fontWeight: 900 }}>Prompt</span>
-                    <input value={imgPrompt} onChange={(e) => setImgPrompt(e.target.value)} placeholder='Ej: "un robot simpático en una oficina moderna"' style={inputStyle()} />
+                    <input
+                      value={imgPrompt}
+                      onChange={(e) => setImgPrompt(e.target.value)}
+                      placeholder='Ej: "un robot simpático en una oficina moderna"'
+                      style={inputStyle()}
+                    />
                     <SubtleHint>Cuanto más específico (luz, cámara, contexto), mejor.</SubtleHint>
                   </label>
 
