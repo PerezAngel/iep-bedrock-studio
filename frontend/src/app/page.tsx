@@ -74,8 +74,16 @@ export default function Home() {
           contentId: contentId || undefined,
         }),
       });
-      const j = await r.json();
-      if (!j.ok) throw new Error(j.error || "generate_failed");
+      let j: any = null;
+      const text = await r.text();
+      try { j = JSON.parse(text); } catch { /* ignore */ }
+      
+      if (!r.ok) {
+        throw new Error(`HTTP_${r.status}: ${text}`);
+      }
+      if (!j?.ok) {
+        throw new Error(j?.error ? `${j.error}: ${j.detail || ""}`.trim() : `generate_failed: ${text}`);
+      }
       setContentId(j.contentId);
       setInputText(j.text || "");
       setStatus(j.status || "DRAFT");
