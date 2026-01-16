@@ -237,12 +237,7 @@ export default function Home() {
       setAuthLoading(false);
     }
   })();
-
-  return () => {
-    alive = false;
-  };
-}, []);
-
+    
     return () => {
       alive = false;
     };
