@@ -221,6 +221,7 @@ export default function Home() {
    */
   useEffect(() => {
   let alive = true;
+  setAuthLoading(true); 
 
   (async () => {
     try {
