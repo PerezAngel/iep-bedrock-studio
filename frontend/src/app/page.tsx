@@ -1,7 +1,7 @@
 "use client";
-
 import { useCallback, useEffect, useMemo, useState } from "react";
-import type { CSSProperties } from "react";
+import type { CSSProperties, ReactNode } from "react";
+
 
 const API_BASE = "https://fdlyaer6g6.execute-api.us-east-1.amazonaws.com";
 
@@ -55,6 +55,11 @@ const UI = {
   shadow: "0 18px 55px rgba(0,0,0,0.35)",
   radius: 14,
 };
+const PAGE_BG =
+  'radial-gradient(1200px 800px at 20% 0%, rgba(99,102,241,0.35), transparent 55%),' +
+  'radial-gradient(900px 600px at 85% 20%, rgba(168,85,247,0.25), transparent 55%),' +
+  'radial-gradient(900px 600px at 50% 100%, rgba(34,197,94,0.12), transparent 55%),' +
+  UI.bg;
 
 function badgeStyle(tone: Tone): CSSProperties {
   const map: Record<Tone, { bg: string; border: string; color: string }> = {
@@ -406,7 +411,7 @@ export default function Home() {
 
   const envBadge = canCall ? { tone: "success" as Tone, text: "Backend configurado" } : { tone: "danger" as Tone, text: "Falta NEXT_PUBLIC_BACKEND_BASE_URL" };
 
-  const SubtleHint = ({ children }: { children: React.ReactNode }) => (
+  const SubtleHint = ({ children }: { children: ReactNode }) => (
     <div style={{ color: UI.text3, fontSize: 12, lineHeight: 1.4 }}>{children}</div>
   );
 
@@ -422,10 +427,7 @@ export default function Home() {
       style={{
         minHeight: "100vh",
         padding: 24,
-        background: `radial-gradient(1200px 800px at 20% 0%, rgba(99,102,241,0.35), transparent 55%),
-                     radial-gradient(900px 600px at 85% 20%, rgba(168,85,247,0.25), transparent 55%),
-                     radial-gradient(900px 600px at 50% 100%, rgba(34,197,94,0.12), transparent 55%),
-                     ${UI.bg}`,
+        background: PAGE_BG,
         color: UI.text,
       }}
     >
