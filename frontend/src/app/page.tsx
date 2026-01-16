@@ -1,4 +1,5 @@
 "use client";
+
 import { useCallback, useEffect, useMemo, useState } from "react";
 import type { CSSProperties, ReactNode } from "react";
 
@@ -46,7 +47,6 @@ type Tone = "neutral" | "primary" | "danger" | "success";
 const UI = {
   bg: "#0b1020",
   surface: "rgba(255,255,255,0.06)",
-  surface2: "rgba(255,255,255,0.10)",
   border: "rgba(255,255,255,0.12)",
   text: "rgba(255,255,255,0.92)",
   text2: "rgba(255,255,255,0.72)",
@@ -54,18 +54,31 @@ const UI = {
   shadow: "0 18px 55px rgba(0,0,0,0.35)",
   radius: 14,
 };
+
 const PAGE_BG =
-  'radial-gradient(1200px 800px at 20% 0%, rgba(99,102,241,0.35), transparent 55%),' +
-  'radial-gradient(900px 600px at 85% 20%, rgba(168,85,247,0.25), transparent 55%),' +
-  'radial-gradient(900px 600px at 50% 100%, rgba(34,197,94,0.12), transparent 55%),' +
+  "radial-gradient(1200px 800px at 20% 0%, rgba(99,102,241,0.35), transparent 55%)," +
+  "radial-gradient(900px 600px at 85% 20%, rgba(168,85,247,0.25), transparent 55%)," +
+  "radial-gradient(900px 600px at 50% 100%, rgba(34,197,94,0.12), transparent 55%)," +
   UI.bg;
 
 function badgeStyle(tone: Tone): CSSProperties {
   const map: Record<Tone, { bg: string; border: string; color: string }> = {
     neutral: { bg: "rgba(255,255,255,0.08)", border: "rgba(255,255,255,0.14)", color: UI.text2 },
-    primary: { bg: "rgba(99,102,241,0.18)", border: "rgba(99,102,241,0.40)", color: "rgba(209,213,255,0.95)" },
-    success: { bg: "rgba(34,197,94,0.15)", border: "rgba(34,197,94,0.35)", color: "rgba(187,255,210,0.95)" },
-    danger: { bg: "rgba(239,68,68,0.16)", border: "rgba(239,68,68,0.40)", color: "rgba(255,205,205,0.95)" },
+    primary: {
+      bg: "rgba(99,102,241,0.18)",
+      border: "rgba(99,102,241,0.40)",
+      color: "rgba(209,213,255,0.95)",
+    },
+    success: {
+      bg: "rgba(34,197,94,0.15)",
+      border: "rgba(34,197,94,0.35)",
+      color: "rgba(187,255,210,0.95)",
+    },
+    danger: {
+      bg: "rgba(239,68,68,0.16)",
+      border: "rgba(239,68,68,0.40)",
+      color: "rgba(255,205,205,0.95)",
+    },
   };
   const c = map[tone];
   return {
@@ -78,27 +91,24 @@ function badgeStyle(tone: Tone): CSSProperties {
     background: c.bg,
     color: c.color,
     fontSize: 12,
-    fontWeight: 600,
+    fontWeight: 700,
     letterSpacing: 0.2,
     whiteSpace: "nowrap",
   };
 }
 
-function buttonStyle(
-  variant: "primary" | "secondary" | "ghost",
-  disabled?: boolean
-): CSSProperties {
+function buttonStyle(variant: "primary" | "secondary" | "ghost", disabled?: boolean): CSSProperties {
   const base: CSSProperties = {
     borderRadius: 12,
     padding: "10px 12px",
     border: "1px solid transparent",
-    fontWeight: 700,
+    fontWeight: 800,
     fontSize: 13,
     letterSpacing: 0.2,
     cursor: disabled ? "not-allowed" : "pointer",
     opacity: disabled ? 0.55 : 1,
-    transition: "transform 120ms ease, background 120ms ease, border-color 120ms ease, opacity 120ms ease",
     userSelect: "none",
+    transition: "transform 120ms ease, background 120ms ease, border-color 120ms ease, opacity 120ms ease",
   };
 
   if (variant === "primary") {
@@ -149,10 +159,9 @@ function softCardStyle(): CSSProperties {
   };
 }
 
-function statusColor(status: Status): Tone {
-  if (status === "PUBLISHED") return "success";
-  if (status === "APPROVED") return "primary";
-  if (status === "IN_REVIEW") return "neutral";
+function statusTone(s: Status): Tone {
+  if (s === "PUBLISHED") return "success";
+  if (s === "APPROVED") return "primary";
   return "neutral";
 }
 
@@ -165,12 +174,11 @@ export default function Home() {
 
   const [tab, setTab] = useState<TabKey>("editor");
 
-  // ----------------- Workflow board state -----------------
+  // Workflow board
   const [selectedContentId, setSelectedContentId] = useState<string | null>(null);
   const [currentStatus, setCurrentStatus] = useState<Status | null>(null);
   const [statusError, setStatusError] = useState<string | null>(null);
   const [boardLoading, setBoardLoading] = useState<boolean>(false);
-
   const [byStatus, setByStatus] = useState<Record<Status, ByStatusItem[]>>({
     DRAFT: [],
     IN_REVIEW: [],
@@ -178,7 +186,7 @@ export default function Home() {
     PUBLISHED: [],
   });
 
-  // ----------------- Content states -----------------
+  // Content states
   const [contentId, setContentId] = useState<string>("");
   const [inputText, setInputText] = useState<string>(
     "Escribe aquí tu texto. Luego prueba Corregir o Resumir."
@@ -189,7 +197,7 @@ export default function Home() {
   const [loading, setLoading] = useState<boolean>(false);
   const [error, setError] = useState<string>("");
 
-  // ----------------- Image states -----------------
+  // Image states
   const [imgPrompt, setImgPrompt] = useState<string>("");
   const [imgStyle, setImgStyle] = useState<ImgStyle>("realista");
   const [imgLoading, setImgLoading] = useState<boolean>(false);
@@ -201,13 +209,12 @@ export default function Home() {
     if (!backendBase) throw new Error("Falta NEXT_PUBLIC_BACKEND_BASE_URL");
   }, [backendBase]);
 
-  // ----------------- Gallery -----------------
   const refreshGallery = useCallback(async () => {
     try {
       const j: any = await fetchJsonOrThrow(`${API_BASE}/image/recent`, { cache: "no-store" });
       if (j?.ok) setGallery(j.images || []);
     } catch {
-      // no bloqueamos UI por galería
+      // no bloqueamos UI
     }
   }, []);
 
@@ -215,11 +222,9 @@ export default function Home() {
     refreshGallery();
   }, [refreshGallery]);
 
-  // ----------------- Image generation -----------------
   const generateImage = useCallback(async () => {
     setImgError(null);
     setImgLoading(true);
-
     try {
       const j: any = await fetchJsonOrThrow(`${API_BASE}/image/generate`, {
         method: "POST",
@@ -238,11 +243,9 @@ export default function Home() {
     }
   }, [imgPrompt, imgStyle, refreshGallery]);
 
-  // ----------------- Backend: hello -----------------
   const apiHello = useCallback(async () => {
     setError("");
     setResult("Llamando /hello...");
-
     try {
       requireBackend();
       const t = await fetchJsonOrThrow<string>(`${backendBase}/hello`, { cache: "no-store" });
@@ -252,13 +255,11 @@ export default function Home() {
     }
   }, [backendBase, requireBackend]);
 
-  // ----------------- Backend: load content -----------------
   const loadContent = useCallback(
     async (id: string) => {
       setError("");
       try {
         requireBackend();
-
         const j: any = await fetchJsonOrThrow(`${backendBase}/content/${encodeURIComponent(id)}`, {
           cache: "no-store",
         });
@@ -277,12 +278,10 @@ export default function Home() {
     [backendBase, requireBackend]
   );
 
-  // ----------------- Backend: generate (Claude) -----------------
   const runClaude = useCallback(
     async (action: string) => {
       setError("");
       setLoading(true);
-
       try {
         requireBackend();
 
@@ -297,9 +296,7 @@ export default function Home() {
           }),
         });
 
-        if (!j?.ok) {
-          throw new Error(j?.error ? `${j.error}: ${j.detail || ""}`.trim() : "generate_failed");
-        }
+        if (!j?.ok) throw new Error(j?.error ? `${j.error}: ${j.detail || ""}`.trim() : "generate_failed");
 
         setContentId(j.contentId);
         setInputText(j.text || "");
@@ -316,30 +313,24 @@ export default function Home() {
     [backendBase, requireBackend, inputText, contentId, loadContent]
   );
 
-  // ----------------- Backend: status change (editor) -----------------
   const changeContentStatus = useCallback(
     async (newStatus: Status) => {
       setError("");
       setLoading(true);
-
       try {
         requireBackend();
         if (!contentId) throw new Error("Primero genera contenido (necesitas contentId)");
 
-        const j: any = await fetchJsonOrThrow(
-          `${backendBase}/content/${encodeURIComponent(contentId)}/status`,
-          {
-            method: "POST",
-            headers: { "content-type": "application/json" },
-            body: JSON.stringify({ status: newStatus }),
-          }
-        );
+        const j: any = await fetchJsonOrThrow(`${backendBase}/content/${encodeURIComponent(contentId)}/status`, {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({ status: newStatus }),
+        });
 
         if (!j.ok) throw new Error(j.error || "status_failed");
 
         setStatus(j.status as Status);
         setResult(`Estado cambiado a ${j.status}`);
-
         await loadContent(contentId);
       } catch (e: any) {
         setError(e?.message ?? String(e));
@@ -354,11 +345,8 @@ export default function Home() {
     if (version?.text) setInputText(version.text);
   }, []);
 
-  // ----------------- Workflow board (by status) -----------------
   const loadByStatus = useCallback(async (st: Status) => {
-    const j: any = await fetchJsonOrThrow(`${API_BASE}/content/by-status?status=${st}`, {
-      cache: "no-store",
-    });
+    const j: any = await fetchJsonOrThrow(`${API_BASE}/content/by-status?status=${st}`, { cache: "no-store" });
     if (j?.ok) setByStatus((prev) => ({ ...prev, [st]: (j.items || []) as ByStatusItem[] }));
   }, []);
 
@@ -408,37 +396,31 @@ export default function Home() {
     return null;
   }, [selectedContentId, currentStatus]);
 
-  const envBadge = canCall ? { tone: "success" as Tone, text: "Backend configurado" } : { tone: "danger" as Tone, text: "Falta NEXT_PUBLIC_BACKEND_BASE_URL" };
+  const envBadge = canCall
+    ? { tone: "success" as Tone, text: "Backend configurado" }
+    : { tone: "danger" as Tone, text: "Falta NEXT_PUBLIC_BACKEND_BASE_URL" };
 
   const SubtleHint = ({ children }: { children: ReactNode }) => (
     <div style={{ color: UI.text3, fontSize: 12, lineHeight: 1.4 }}>{children}</div>
   );
 
-  const SectionTitle = ({ title, right }: { title: string; right?: React.ReactNode }) => (
+  const SectionTitle = ({ title, right }: { title: string; right?: ReactNode }) => (
     <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12, marginBottom: 10 }}>
-      <div style={{ fontSize: 14, fontWeight: 900, letterSpacing: 0.2, color: UI.text }}>{title}</div>
+      <div style={{ fontSize: 14, fontWeight: 950, letterSpacing: 0.2, color: UI.text }}>{title}</div>
       {right}
     </div>
   );
 
   return (
-    <main
-      style={{
-        minHeight: "100vh",
-        padding: 24,
-        background: PAGE_BG,
-        color: UI.text,
-      }}
-    >
+    <main style={{ minHeight: "100vh", padding: 24, background: PAGE_BG, color: UI.text }}>
       <div style={{ maxWidth: 1160, margin: "0 auto" }}>
         {/* Header */}
         <div style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between", gap: 12, marginBottom: 16 }}>
           <div>
             <div style={{ fontSize: 24, fontWeight: 950, letterSpacing: -0.2 }}>Bedrock Studio</div>
-            <div style={{ marginTop: 6, color: UI.text2, fontSize: 13 }}>
-              MVP · Editor + Workflow + Imágenes
-            </div>
+            <div style={{ marginTop: 6, color: UI.text2, fontSize: 13 }}>MVP · Editor + Workflow + Imágenes</div>
           </div>
+
           <div style={{ display: "flex", gap: 10, alignItems: "center" }}>
             <span style={badgeStyle(envBadge.tone)}>{envBadge.text}</span>
             <button onClick={apiHello} disabled={!canCall || loading} style={buttonStyle("secondary", !canCall || loading)}>
@@ -472,7 +454,7 @@ export default function Home() {
           })}
         </div>
 
-        {/* Top notice */}
+        {/* Notice */}
         <div
           style={{
             ...softCardStyle(),
@@ -483,23 +465,22 @@ export default function Home() {
         >
           <div style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between", gap: 12 }}>
             <div>
-              <div style={{ fontWeight: 900, fontSize: 13 }}>Ritmo de peticiones</div>
+              <div style={{ fontWeight: 950, fontSize: 13 }}>Ritmo de peticiones</div>
               <div style={{ marginTop: 6, color: UI.text2, fontSize: 13, lineHeight: 1.4 }}>
                 Evita disparar acciones seguidas. Entre llamadas al modelo espera <b>5–10s</b>.
               </div>
             </div>
-            <span style={badgeStyle("primary")}>Tip: menos spam, más éxito</span>
+            <span style={badgeStyle("primary")}>Menos spam, más éxito</span>
           </div>
         </div>
 
-        {/* Main layout */}
         <div style={{ display: "grid", gridTemplateColumns: "360px 1fr", gap: 16 }}>
           {/* Left panel */}
           <aside style={{ ...softCardStyle(), padding: 14 }}>
-            <SectionTitle title="Contenido" right={<span style={badgeStyle(statusColor(status))}>{status}</span>} />
+            <SectionTitle title="Contenido" right={<span style={badgeStyle(statusTone(status))}>{status}</span>} />
 
             <label style={{ display: "grid", gap: 6, marginBottom: 10 }}>
-              <span style={{ color: UI.text2, fontSize: 12, fontWeight: 700 }}>contentId</span>
+              <span style={{ color: UI.text2, fontSize: 12, fontWeight: 800 }}>contentId</span>
               <input
                 value={contentId}
                 onChange={(e) => setContentId(e.target.value)}
@@ -561,10 +542,7 @@ export default function Home() {
                     key={s}
                     disabled={loading || !contentId}
                     onClick={() => changeContentStatus(s)}
-                    style={{
-                      ...buttonStyle(active ? "primary" : "secondary", loading || !contentId),
-                      padding: "10px 10px",
-                    }}
+                    style={{ ...buttonStyle(active ? "primary" : "secondary", loading || !contentId), padding: "10px 10px" }}
                   >
                     {s}
                   </button>
@@ -572,14 +550,11 @@ export default function Home() {
               })}
             </div>
 
-            <div style={{ marginTop: 14, color: UI.text3, fontSize: 12 }}>
-              {loading ? "Procesando…" : "Listo."}
-            </div>
+            <div style={{ marginTop: 14, color: UI.text3, fontSize: 12 }}>{loading ? "Procesando…" : "Listo."}</div>
           </aside>
 
           {/* Right panel */}
           <section style={{ display: "grid", gap: 16 }}>
-            {/* Editor */}
             {tab === "editor" && (
               <div style={{ ...softCardStyle(), padding: 14 }}>
                 <SectionTitle title="Editor de texto" right={<span style={badgeStyle("neutral")}>{inputText.length} chars</span>} />
@@ -608,14 +583,14 @@ export default function Home() {
                       <div
                         style={{
                           borderRadius: 14,
-                          border: `1px solid rgba(34,197,94,0.25)`,
+                          border: "1px solid rgba(34,197,94,0.25)",
                           background: "rgba(34,197,94,0.10)",
                           padding: 12,
                           color: "rgba(209,255,225,0.95)",
                           fontSize: 13,
                         }}
                       >
-                        <div style={{ fontWeight: 900, marginBottom: 6 }}>Resultado</div>
+                        <div style={{ fontWeight: 950, marginBottom: 6 }}>Resultado</div>
                         <pre style={{ margin: 0, whiteSpace: "pre-wrap", color: "inherit" }}>{result}</pre>
                       </div>
                     )}
@@ -624,14 +599,14 @@ export default function Home() {
                       <div
                         style={{
                           borderRadius: 14,
-                          border: `1px solid rgba(239,68,68,0.30)`,
+                          border: "1px solid rgba(239,68,68,0.30)",
                           background: "rgba(239,68,68,0.12)",
                           padding: 12,
                           color: "rgba(255,214,214,0.95)",
                           fontSize: 13,
                         }}
                       >
-                        <div style={{ fontWeight: 900, marginBottom: 6 }}>Error</div>
+                        <div style={{ fontWeight: 950, marginBottom: 6 }}>Error</div>
                         <pre style={{ margin: 0, whiteSpace: "pre-wrap", color: "inherit" }}>{error}</pre>
                       </div>
                     )}
@@ -640,7 +615,6 @@ export default function Home() {
               </div>
             )}
 
-            {/* Workflow */}
             {tab === "workflow" && (
               <div style={{ ...softCardStyle(), padding: 14 }}>
                 <SectionTitle
@@ -658,7 +632,7 @@ export default function Home() {
                 {selectedContentId && currentStatus && (
                   <div style={{ display: "flex", gap: 10, alignItems: "center", marginBottom: 12, flexWrap: "wrap" }}>
                     <span style={badgeStyle("primary")}>Seleccionado: {selectedContentId}</span>
-                    <span style={badgeStyle(statusColor(currentStatus))}>Estado: {currentStatus}</span>
+                    <span style={badgeStyle(statusTone(currentStatus))}>Estado: {currentStatus}</span>
                     {nextActionLabel && (
                       <button
                         onClick={() => changeBoardStatus(selectedContentId, nextActionLabel.next)}
@@ -684,8 +658,8 @@ export default function Home() {
                       }}
                     >
                       <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 10 }}>
-                        <span style={badgeStyle(statusColor(st))}>{st}</span>
-                        <span style={{ color: UI.text3, fontSize: 12, fontWeight: 700 }}>{byStatus[st].length}</span>
+                        <span style={badgeStyle(statusTone(st))}>{st}</span>
+                        <span style={{ color: UI.text3, fontSize: 12, fontWeight: 800 }}>{byStatus[st].length}</span>
                       </div>
 
                       <div style={{ display: "grid", gap: 8 }}>
@@ -707,15 +681,10 @@ export default function Home() {
                                 background: active ? "rgba(99,102,241,0.12)" : "rgba(255,255,255,0.06)",
                                 color: UI.text,
                                 cursor: "pointer",
-                                transition: "transform 120ms ease, background 120ms ease, border-color 120ms ease",
                               }}
-                              onMouseDown={(e) => (e.currentTarget.style.transform = "translateY(1px)")}
-                              onMouseUp={(e) => (e.currentTarget.style.transform = "translateY(0px)")}
                             >
-                              <div style={{ fontSize: 12, fontWeight: 900, letterSpacing: 0.2 }}>contentId</div>
-                              <div style={{ fontSize: 12, color: UI.text2, marginTop: 4, wordBreak: "break-all" }}>
-                                {it.contentId}
-                              </div>
+                              <div style={{ fontSize: 12, fontWeight: 950, letterSpacing: 0.2 }}>contentId</div>
+                              <div style={{ fontSize: 12, color: UI.text2, marginTop: 4, wordBreak: "break-all" }}>{it.contentId}</div>
                             </button>
                           );
                         })}
@@ -732,17 +701,13 @@ export default function Home() {
               </div>
             )}
 
-            {/* Images */}
             {tab === "images" && (
               <div style={{ ...softCardStyle(), padding: 14 }}>
-                <SectionTitle
-                  title="Generación de imágenes"
-                  right={<span style={badgeStyle("neutral")}>Titan</span>}
-                />
+                <SectionTitle title="Generación de imágenes" right={<span style={badgeStyle("neutral")}>Titan</span>} />
 
                 <div style={{ display: "grid", gridTemplateColumns: "1fr 220px", gap: 12, alignItems: "end" }}>
                   <label style={{ display: "grid", gap: 6 }}>
-                    <span style={{ color: UI.text2, fontSize: 12, fontWeight: 700 }}>Prompt</span>
+                    <span style={{ color: UI.text2, fontSize: 12, fontWeight: 800 }}>Prompt</span>
                     <input
                       value={imgPrompt}
                       onChange={(e) => setImgPrompt(e.target.value)}
@@ -753,7 +718,7 @@ export default function Home() {
                   </label>
 
                   <label style={{ display: "grid", gap: 6 }}>
-                    <span style={{ color: UI.text2, fontSize: 12, fontWeight: 700 }}>Estilo</span>
+                    <span style={{ color: UI.text2, fontSize: 12, fontWeight: 800 }}>Estilo</span>
                     <select
                       value={imgStyle}
                       onChange={(e) => setImgStyle(e.target.value as ImgStyle)}
@@ -767,11 +732,7 @@ export default function Home() {
                 </div>
 
                 <div style={{ display: "flex", gap: 10, alignItems: "center", marginTop: 12, flexWrap: "wrap" }}>
-                  <button
-                    onClick={generateImage}
-                    disabled={imgLoading || !imgPrompt.trim()}
-                    style={buttonStyle("primary", imgLoading || !imgPrompt.trim())}
-                  >
+                  <button onClick={generateImage} disabled={imgLoading || !imgPrompt.trim()} style={buttonStyle("primary", imgLoading || !imgPrompt.trim())}>
                     {imgLoading ? "Generando…" : "Generar imagen"}
                   </button>
                   {imgError && <span style={badgeStyle("danger")}>{imgError}</span>}
@@ -786,7 +747,7 @@ export default function Home() {
                         href={lastImageUrl}
                         target="_blank"
                         rel="noreferrer"
-                        style={{ color: "rgba(209,213,255,0.95)", fontSize: 13, fontWeight: 800 }}
+                        style={{ color: "rgba(209,213,255,0.95)", fontSize: 13, fontWeight: 900, textDecoration: "none" }}
                       >
                         Abrir / Descargar
                       </a>
@@ -798,3 +759,85 @@ export default function Home() {
                       style={{
                         width: "100%",
                         maxWidth: 720,
+                        borderRadius: 16,
+                        border: `1px solid ${UI.border}`,
+                        boxShadow: UI.shadow,
+                      }}
+                    />
+                  </div>
+                )}
+
+                <div style={{ marginTop: 18 }}>
+                  <SectionTitle title="Galería" right={<span style={badgeStyle("neutral")}>{gallery.length} items</span>} />
+
+                  <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(170px, 1fr))", gap: 12 }}>
+                    {gallery.map((it) => (
+                      <div
+                        key={it.key}
+                        style={{
+                          borderRadius: 16,
+                          border: `1px solid ${UI.border}`,
+                          background: "rgba(255,255,255,0.06)",
+                          padding: 10,
+                        }}
+                      >
+                        <a
+                          href={it.url}
+                          target="_blank"
+                          rel="noreferrer"
+                          style={{ color: UI.text2, fontSize: 12, fontWeight: 900, textDecoration: "none" }}
+                        >
+                          Abrir / Descargar
+                        </a>
+                        <img
+                          src={it.url}
+                          alt={it.key}
+                          style={{ width: "100%", borderRadius: 12, marginTop: 10, border: `1px solid ${UI.border}` }}
+                        />
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              </div>
+            )}
+
+            {tab === "history" && (
+              <div style={{ ...softCardStyle(), padding: 14 }}>
+                <SectionTitle title="Historial (últimas 20 versiones)" right={<span style={badgeStyle("neutral")}>{versions.length}</span>} />
+
+                <div style={{ display: "grid", gap: 10 }}>
+                  {versions.map((v) => (
+                    <div key={v.sk} style={{ borderRadius: 16, border: `1px solid ${UI.border}`, background: "rgba(255,255,255,0.06)", padding: 12 }}>
+                      <div style={{ display: "flex", justifyContent: "space-between", gap: 12, alignItems: "center" }}>
+                        <div style={{ display: "grid", gap: 6 }}>
+                          <div style={{ fontWeight: 950, fontSize: 13 }}>
+                            {v.action || "—"} <span style={{ color: UI.text3, fontWeight: 800, marginLeft: 6 }}>{v.createdAt || ""}</span>
+                          </div>
+                          {v.status && <span style={badgeStyle(statusTone(v.status as Status))}>{v.status}</span>}
+                        </div>
+
+                        <button onClick={() => revertTo(v)} style={buttonStyle("secondary", false)}>
+                          Revertir
+                        </button>
+                      </div>
+
+                      <pre style={{ whiteSpace: "pre-wrap", marginTop: 10, color: UI.text2, fontSize: 13, lineHeight: 1.45 }}>
+                        {v.text}
+                      </pre>
+                    </div>
+                  ))}
+
+                  {versions.length === 0 && (
+                    <div style={{ color: UI.text3, fontSize: 13, padding: 12, borderRadius: 14, border: `1px dashed ${UI.border}` }}>
+                      No hay versiones aún.
+                    </div>
+                  )}
+                </div>
+              </div>
+            )}
+          </section>
+        </div>
+      </div>
+    </main>
+  );
+}
