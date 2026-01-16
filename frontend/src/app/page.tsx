@@ -18,22 +18,7 @@ type VersionItem = {
 };
 
 type GalleryItem = { key: string; url: string };
-
-type ByStatusItem = {
-  contentId: string;
-  versionId?: string;
-  sk?: string;
-};
-
-const WARNING_BOX_STYLE: CSSProperties = {
-  marginTop: 12,
-  marginBottom: 16,
-  padding: 12,
-  background: "#fff7e6",
-  border: "1px solid #ffd591",
-  borderRadius: 6,
-  fontSize: 14,
-};
+type ByStatusItem = { contentId: string; versionId?: string; sk?: string };
 
 const STATUSES: Status[] = ["DRAFT", "IN_REVIEW", "APPROVED", "PUBLISHED"];
 
@@ -49,21 +34,132 @@ async function fetchJsonOrThrow<T = any>(url: string, init?: RequestInit): Promi
   try {
     parsed = raw ? JSON.parse(raw) : null;
   } catch {
-    // no-op (respuesta no JSON)
+    // respuesta no JSON
   }
 
-  if (!r.ok) {
-    throw new Error(`HTTP_${r.status}: ${raw}`);
-  }
-
+  if (!r.ok) throw new Error(`HTTP_${r.status}: ${raw}`);
   return (parsed ?? (raw as any)) as T;
 }
 
+/* ------------------------------ UI tokens ------------------------------ */
+type Tone = "neutral" | "primary" | "danger" | "success";
+
+const UI = {
+  bg: "#0b1020",
+  surface: "rgba(255,255,255,0.06)",
+  surface2: "rgba(255,255,255,0.10)",
+  border: "rgba(255,255,255,0.12)",
+  text: "rgba(255,255,255,0.92)",
+  text2: "rgba(255,255,255,0.72)",
+  text3: "rgba(255,255,255,0.55)",
+  shadow: "0 18px 55px rgba(0,0,0,0.35)",
+  radius: 14,
+};
+
+function badgeStyle(tone: Tone): CSSProperties {
+  const map: Record<Tone, { bg: string; border: string; color: string }> = {
+    neutral: { bg: "rgba(255,255,255,0.08)", border: "rgba(255,255,255,0.14)", color: UI.text2 },
+    primary: { bg: "rgba(99,102,241,0.18)", border: "rgba(99,102,241,0.40)", color: "rgba(209,213,255,0.95)" },
+    success: { bg: "rgba(34,197,94,0.15)", border: "rgba(34,197,94,0.35)", color: "rgba(187,255,210,0.95)" },
+    danger: { bg: "rgba(239,68,68,0.16)", border: "rgba(239,68,68,0.40)", color: "rgba(255,205,205,0.95)" },
+  };
+  const c = map[tone];
+  return {
+    display: "inline-flex",
+    alignItems: "center",
+    gap: 8,
+    padding: "6px 10px",
+    borderRadius: 999,
+    border: `1px solid ${c.border}`,
+    background: c.bg,
+    color: c.color,
+    fontSize: 12,
+    fontWeight: 600,
+    letterSpacing: 0.2,
+    whiteSpace: "nowrap",
+  };
+}
+
+function buttonStyle(
+  variant: "primary" | "secondary" | "ghost",
+  disabled?: boolean
+): CSSProperties {
+  const base: CSSProperties = {
+    borderRadius: 12,
+    padding: "10px 12px",
+    border: "1px solid transparent",
+    fontWeight: 700,
+    fontSize: 13,
+    letterSpacing: 0.2,
+    cursor: disabled ? "not-allowed" : "pointer",
+    opacity: disabled ? 0.55 : 1,
+    transition: "transform 120ms ease, background 120ms ease, border-color 120ms ease, opacity 120ms ease",
+    userSelect: "none",
+  };
+
+  if (variant === "primary") {
+    return {
+      ...base,
+      color: "white",
+      background: "linear-gradient(135deg, rgba(99,102,241,0.95), rgba(168,85,247,0.90))",
+      borderColor: "rgba(255,255,255,0.14)",
+      boxShadow: "0 12px 30px rgba(99,102,241,0.18)",
+    };
+  }
+
+  if (variant === "secondary") {
+    return {
+      ...base,
+      color: UI.text,
+      background: "rgba(255,255,255,0.08)",
+      borderColor: "rgba(255,255,255,0.14)",
+    };
+  }
+
+  return {
+    ...base,
+    color: UI.text2,
+    background: "transparent",
+    borderColor: "rgba(255,255,255,0.14)",
+  };
+}
+
+function inputStyle(): CSSProperties {
+  return {
+    width: "100%",
+    padding: "10px 12px",
+    borderRadius: 12,
+    border: `1px solid ${UI.border}`,
+    background: "rgba(0,0,0,0.25)",
+    color: UI.text,
+    outline: "none",
+  };
+}
+
+function softCardStyle(): CSSProperties {
+  return {
+    borderRadius: UI.radius,
+    border: `1px solid ${UI.border}`,
+    background: UI.surface,
+    boxShadow: UI.shadow,
+  };
+}
+
+function statusColor(status: Status): Tone {
+  if (status === "PUBLISHED") return "success";
+  if (status === "APPROVED") return "primary";
+  if (status === "IN_REVIEW") return "neutral";
+  return "neutral";
+}
+
+type TabKey = "editor" | "workflow" | "images" | "history";
+
 export default function Home() {
-  // Backend base (Claude + DDB)
   const backend = process.env.NEXT_PUBLIC_BACKEND_BASE_URL || "";
   const backendBase = useMemo(() => stripTrailingSlashes(backend), [backend]);
   const canCall = !!backendBase;
+
+  const [tab, setTab] = useState<TabKey>("editor");
 
   // ----------------- Workflow board state -----------------
   const [selectedContentId, setSelectedContentId] = useState<string | null>(null);
@@ -97,7 +193,6 @@ export default function Home() {
   const [lastImageUrl, setLastImageUrl] = useState<string | null>(null);
   const [gallery, setGallery] = useState<GalleryItem[]>([]);
 
-  // ----------------- Helpers -----------------
   const requireBackend = useCallback(() => {
     if (!backendBase) throw new Error("Falta NEXT_PUBLIC_BACKEND_BASE_URL");
   }, [backendBase]);
@@ -157,7 +252,6 @@ export default function Home() {
   const loadContent = useCallback(
     async (id: string) => {
       setError("");
-
       try {
         requireBackend();
 
@@ -261,9 +355,7 @@ export default function Home() {
     const j: any = await fetchJsonOrThrow(`${API_BASE}/content/by-status?status=${st}`, {
       cache: "no-store",
     });
-    if (j?.ok) {
-      setByStatus((prev) => ({ ...prev, [st]: (j.items || []) as ByStatusItem[] }));
-    }
+    if (j?.ok) setByStatus((prev) => ({ ...prev, [st]: (j.items || []) as ByStatusItem[] }));
   }, []);
 
   const refreshAllStatuses = useCallback(async () => {
@@ -278,19 +370,15 @@ export default function Home() {
     }
   }, [loadByStatus]);
 
-  // ✅ nombre correcto y payload consistente: { status: ... }
   const changeBoardStatus = useCallback(
     async (id: string, nextStatus: Status) => {
       setStatusError(null);
       try {
-        const j: any = await fetchJsonOrThrow(
-          `${API_BASE}/content/${encodeURIComponent(id)}/status`,
-          {
-            method: "POST",
-            headers: { "content-type": "application/json" },
-            body: JSON.stringify({ status: nextStatus }),
-          }
-        );
+        const j: any = await fetchJsonOrThrow(`${API_BASE}/content/${encodeURIComponent(id)}/status`, {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({ status: nextStatus }),
+        });
 
         if (!j?.ok) throw new Error(j?.error || j?.message || "status_change_failed");
 
@@ -308,7 +396,6 @@ export default function Home() {
     refreshAllStatuses();
   }, [refreshAllStatuses]);
 
-  // ----------------- UI -----------------
   const nextActionLabel = useMemo(() => {
     if (!selectedContentId || !currentStatus) return null;
     if (currentStatus === "DRAFT") return { next: "IN_REVIEW" as Status, label: "Enviar a revisión" };
@@ -317,253 +404,396 @@ export default function Home() {
     return null;
   }, [selectedContentId, currentStatus]);
 
+  const envBadge = canCall ? { tone: "success" as Tone, text: "Backend configurado" } : { tone: "danger" as Tone, text: "Falta NEXT_PUBLIC_BACKEND_BASE_URL" };
+
+  const SubtleHint = ({ children }: { children: React.ReactNode }) => (
+    <div style={{ color: UI.text3, fontSize: 12, lineHeight: 1.4 }}>{children}</div>
+  );
+
+  const SectionTitle = ({ title, right }: { title: string; right?: React.ReactNode }) => (
+    <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12, marginBottom: 10 }}>
+      <div style={{ fontSize: 14, fontWeight: 900, letterSpacing: 0.2, color: UI.text }}>{title}</div>
+      {right}
+    </div>
+  );
+
   return (
-    <main style={{ padding: 24, fontFamily: "sans-serif", maxWidth: 1000 }}>
-      <h1>Bedrock Studio – MVP</h1>
-
-      <div style={WARNING_BOX_STYLE}>
-        ⚠️ <b>Aviso importante</b>: el modelo de IA no admite peticiones seguidas.
-        <br />
-        Tras cada acción (Resumir, Corregir, Variaciones…), espera <b>5–10 segundos</b> antes de
-        lanzar otra petición para evitar errores.
-      </div>
-
-      <div style={{ marginBottom: 12 }}>
-        <button onClick={apiHello} disabled={!canCall || loading} style={{ padding: 8 }}>
-          Probar backend (/hello)
-        </button>
-      </div>
-
-      <div style={{ display: "flex", gap: 16, alignItems: "center", marginBottom: 12 }}>
-        <label>
-          <b>contentId:</b>{" "}
-          <input
-            value={contentId}
-            onChange={(e) => setContentId(e.target.value)}
-            placeholder="Se rellena al generar"
-            style={{ width: 360, padding: 6 }}
-          />
-        </label>
-
-        <button
-          onClick={() => contentId && loadContent(contentId)}
-          disabled={!canCall || loading || !contentId}
-          style={{ padding: 8 }}
-        >
-          Cargar historial
-        </button>
-
-        <span>
-          <b>Estado:</b> {status}
-        </span>
-      </div>
-
-      <textarea
-        value={inputText}
-        onChange={(e) => setInputText(e.target.value)}
-        rows={10}
-        style={{ width: "100%", padding: 10 }}
-      />
-
-      <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginTop: 12 }}>
-        <button disabled={!canCall || loading} onClick={() => runClaude("summarize")} style={{ padding: 8 }}>
-          Resumir
-        </button>
-        <button disabled={!canCall || loading} onClick={() => runClaude("expand")} style={{ padding: 8 }}>
-          Expandir
-        </button>
-        <button disabled={!canCall || loading} onClick={() => runClaude("fix")} style={{ padding: 8 }}>
-          Corregir
-        </button>
-        <button disabled={!canCall || loading} onClick={() => runClaude("variations")} style={{ padding: 8 }}>
-          Variaciones (3)
-        </button>
-      </div>
-
-      <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginTop: 12 }}>
-        <button disabled={loading || !contentId} onClick={() => changeContentStatus("DRAFT")} style={{ padding: 8 }}>
-          DRAFT
-        </button>
-        <button disabled={loading || !contentId} onClick={() => changeContentStatus("IN_REVIEW")} style={{ padding: 8 }}>
-          IN_REVIEW
-        </button>
-        <button disabled={loading || !contentId} onClick={() => changeContentStatus("APPROVED")} style={{ padding: 8 }}>
-          APPROVED
-        </button>
-        <button disabled={loading || !contentId} onClick={() => changeContentStatus("PUBLISHED")} style={{ padding: 8 }}>
-          PUBLISHED
-        </button>
-      </div>
-
-      <hr style={{ margin: "24px 0" }} />
-
-      <h2 style={{ fontSize: 20, fontWeight: 700 }}>Workflow de contenidos</h2>
-
-      <div style={{ display: "flex", gap: 10, alignItems: "center", marginBottom: 10 }}>
-        <button onClick={refreshAllStatuses} disabled={boardLoading} style={{ padding: 8 }}>
-          {boardLoading ? "Actualizando..." : "Refrescar tablero"}
-        </button>
-        {statusError && <div style={{ color: "crimson" }}>Error: {statusError}</div>}
-      </div>
-
-      {selectedContentId && currentStatus && (
-        <div style={{ marginBottom: 16 }}>
-          <b>Contenido seleccionado:</b> {selectedContentId}
-          <br />
-          <b>Estado:</b> {currentStatus}
-        </div>
-      )}
-
-      <div style={{ display: "flex", gap: 10, marginBottom: 16 }}>
-        {nextActionLabel && (
-          <button
-            onClick={() => changeBoardStatus(selectedContentId as string, nextActionLabel.next)}
-            disabled={!selectedContentId || boardLoading}
-            style={{ padding: 8 }}
-          >
-            {nextActionLabel.label}
-          </button>
-        )}
-      </div>
-
-      <div style={{ display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: 12 }}>
-        {STATUSES.map((st) => (
-          <div key={st} style={{ border: "1px solid #ddd", borderRadius: 8, padding: 8 }}>
-            <b>{st}</b>
-            <ul style={{ listStyle: "none", padding: 0 }}>
-              {byStatus[st].map((it) => (
-                <li
-                  key={`${it.contentId}-${it.versionId || it.sk || st}`}
-                  style={{
-                    cursor: "pointer",
-                    marginTop: 6,
-                    padding: "4px 6px",
-                    borderRadius: 6,
-                    background: it.contentId === selectedContentId ? "#f0f5ff" : "transparent",
-                    border: it.contentId === selectedContentId ? "1px solid #adc6ff" : "1px solid transparent",
-                  }}
-                  onClick={() => {
-                    setSelectedContentId(it.contentId);
-                    setCurrentStatus(st);
-                  }}
-                  title={it.contentId}
-                >
-                  {it.contentId}
-                </li>
-              ))}
-              {byStatus[st].length === 0 && (
-                <li style={{ marginTop: 8, opacity: 0.7, fontSize: 12 }}>— vacío —</li>
-              )}
-            </ul>
+    <main
+      style={{
+        minHeight: "100vh",
+        padding: 24,
+        background: `radial-gradient(1200px 800px at 20% 0%, rgba(99,102,241,0.35), transparent 55%),
+                     radial-gradient(900px 600px at 85% 20%, rgba(168,85,247,0.25), transparent 55%),
+                     radial-gradient(900px 600px at 50% 100%, rgba(34,197,94,0.12), transparent 55%),
+                     ${UI.bg}`,
+        color: UI.text,
+      }}
+    >
+      <div style={{ maxWidth: 1160, margin: "0 auto" }}>
+        {/* Header */}
+        <div style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between", gap: 12, marginBottom: 16 }}>
+          <div>
+            <div style={{ fontSize: 24, fontWeight: 950, letterSpacing: -0.2 }}>Bedrock Studio</div>
+            <div style={{ marginTop: 6, color: UI.text2, fontSize: 13 }}>
+              MVP · Editor + Workflow + Imágenes
+            </div>
           </div>
-        ))}
-      </div>
+          <div style={{ display: "flex", gap: 10, alignItems: "center" }}>
+            <span style={badgeStyle(envBadge.tone)}>{envBadge.text}</span>
+            <button onClick={apiHello} disabled={!canCall || loading} style={buttonStyle("secondary", !canCall || loading)}>
+              Probar /hello
+            </button>
+          </div>
+        </div>
 
-      {loading && <p style={{ marginTop: 12 }}>Procesando… recuerda esperar unos segundos entre peticiones.</p>}
-      {result && <pre style={{ marginTop: 12, background: "#f5f5f5", padding: 12 }}>{result}</pre>}
-      {error && <pre style={{ marginTop: 12, background: "#fff0f0", padding: 12 }}>{error}</pre>}
+        {/* Tabs */}
+        <div style={{ display: "flex", gap: 8, marginBottom: 14, flexWrap: "wrap" }}>
+          {([
+            { key: "editor", label: "Editor" },
+            { key: "workflow", label: "Workflow" },
+            { key: "images", label: "Imágenes" },
+            { key: "history", label: "Historial" },
+          ] as { key: TabKey; label: string }[]).map((t) => {
+            const active = tab === t.key;
+            return (
+              <button
+                key={t.key}
+                onClick={() => setTab(t.key)}
+                style={{
+                  ...buttonStyle(active ? "primary" : "ghost", false),
+                  padding: "9px 12px",
+                  transform: active ? "translateY(-1px)" : "none",
+                }}
+              >
+                {t.label}
+              </button>
+            );
+          })}
+        </div>
 
-      <hr style={{ margin: "24px 0" }} />
-
-      <h2 style={{ fontSize: 20, fontWeight: 700 }}>Generación de imágenes (Titan)</h2>
-
-      <div style={WARNING_BOX_STYLE}>
-        ⚠️ <b>Aviso</b>: evita lanzar peticiones seguidas. Espera <b>5–10 segundos</b> entre generaciones para evitar saturación.
-      </div>
-
-      <div style={{ display: "grid", gap: 12, maxWidth: 900 }}>
-        <label>
-          <div style={{ fontSize: 12, opacity: 0.8, marginBottom: 6 }}>Prompt (descripción)</div>
-          <input
-            value={imgPrompt}
-            onChange={(e) => setImgPrompt(e.target.value)}
-            placeholder='Ej: "un robot simpático en una oficina moderna"'
-            style={{ width: "100%", padding: 10, borderRadius: 6, border: "1px solid #ccc" }}
-          />
-        </label>
-
-        <label>
-          <div style={{ fontSize: 12, opacity: 0.8, marginBottom: 6 }}>Estilo</div>
-          <select
-            value={imgStyle}
-            onChange={(e) => setImgStyle(e.target.value as ImgStyle)}
-            style={{ width: 220, padding: 10, borderRadius: 6, border: "1px solid #ccc" }}
-          >
-            <option value="realista">Realista</option>
-            <option value="anime">Anime</option>
-            <option value="oleo">Óleo</option>
-          </select>
-        </label>
-
-        <button
-          onClick={generateImage}
-          disabled={imgLoading || !imgPrompt.trim()}
+        {/* Top notice */}
+        <div
           style={{
-            width: 220,
-            padding: "10px 14px",
-            borderRadius: 8,
-            border: "1px solid #222",
-            background: imgLoading ? "#ddd" : "#111",
-            color: "#fff",
-            cursor: imgLoading ? "not-allowed" : "pointer",
+            ...softCardStyle(),
+            padding: 14,
+            marginBottom: 16,
+            background: "linear-gradient(180deg, rgba(255,255,255,0.09), rgba(255,255,255,0.05))",
           }}
         >
-          {imgLoading ? "Generando..." : "Generar imagen"}
-        </button>
-
-        {imgError && <div style={{ color: "crimson" }}>Error: {imgError}</div>}
-
-        {lastImageUrl && (
-          <div style={{ marginTop: 8 }}>
-            <div style={{ fontSize: 12, opacity: 0.8, marginBottom: 8 }}>Última imagen</div>
-            <a href={lastImageUrl} target="_blank" rel="noreferrer">
-              Abrir / Descargar
-            </a>
-            <div style={{ marginTop: 10 }}>
-              <img
-                src={lastImageUrl}
-                alt="Última imagen generada"
-                style={{ maxWidth: 520, width: "100%", borderRadius: 10, border: "1px solid #ddd" }}
-              />
-            </div>
-          </div>
-        )}
-
-        <div style={{ marginTop: 16 }}>
-          <div style={{ fontSize: 12, opacity: 0.8, marginBottom: 8 }}>Galería (últimas)</div>
-
-          <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(160px, 1fr))", gap: 10 }}>
-            {gallery.map((it) => (
-              <div key={it.key} style={{ border: "1px solid #ddd", borderRadius: 10, padding: 8 }}>
-                <a href={it.url} target="_blank" rel="noreferrer" style={{ fontSize: 12 }}>
-                  Abrir / Descargar
-                </a>
-                <div style={{ marginTop: 8 }}>
-                  <img src={it.url} alt={it.key} style={{ width: "100%", borderRadius: 8 }} />
-                </div>
+          <div style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between", gap: 12 }}>
+            <div>
+              <div style={{ fontWeight: 900, fontSize: 13 }}>Ritmo de peticiones</div>
+              <div style={{ marginTop: 6, color: UI.text2, fontSize: 13, lineHeight: 1.4 }}>
+                Evita disparar acciones seguidas. Entre llamadas al modelo espera <b>5–10s</b>.
               </div>
-            ))}
+            </div>
+            <span style={badgeStyle("primary")}>Tip: menos spam, más éxito</span>
           </div>
         </div>
-      </div>
 
-      <h2 style={{ marginTop: 24 }}>Historial (últimas 20 versiones)</h2>
-      <div style={{ display: "grid", gap: 10 }}>
-        {versions.map((v) => (
-          <div key={v.sk} style={{ border: "1px solid #ddd", padding: 10 }}>
-            <div style={{ display: "flex", justifyContent: "space-between", gap: 12 }}>
-              <div>
-                <b>{v.action}</b> — <span>{v.createdAt}</span>
-              </div>
-              <button onClick={() => revertTo(v)} style={{ padding: 6 }}>
-                Revertir a esta versión
+        {/* Main layout */}
+        <div style={{ display: "grid", gridTemplateColumns: "360px 1fr", gap: 16 }}>
+          {/* Left panel */}
+          <aside style={{ ...softCardStyle(), padding: 14 }}>
+            <SectionTitle title="Contenido" right={<span style={badgeStyle(statusColor(status))}>{status}</span>} />
+
+            <label style={{ display: "grid", gap: 6, marginBottom: 10 }}>
+              <span style={{ color: UI.text2, fontSize: 12, fontWeight: 700 }}>contentId</span>
+              <input
+                value={contentId}
+                onChange={(e) => setContentId(e.target.value)}
+                placeholder="Se rellena al generar"
+                style={inputStyle()}
+              />
+              <SubtleHint>Usa “Cargar historial” si ya tienes un contentId.</SubtleHint>
+            </label>
+
+            <div style={{ display: "flex", gap: 8, marginBottom: 12, flexWrap: "wrap" }}>
+              <button
+                onClick={() => contentId && loadContent(contentId)}
+                disabled={!canCall || loading || !contentId}
+                style={buttonStyle("secondary", !canCall || loading || !contentId)}
+              >
+                Cargar historial
+              </button>
+
+              <button
+                onClick={() => {
+                  setResult("");
+                  setError("");
+                }}
+                style={buttonStyle("ghost", false)}
+              >
+                Limpiar mensajes
               </button>
             </div>
-            <pre style={{ whiteSpace: "pre-wrap", marginTop: 8 }}>{v.text}</pre>
-          </div>
-        ))}
-        {versions.length === 0 && <p>No hay versiones aún.</p>}
-      </div>
-    </main>
-  );
-}
+
+            <SectionTitle title="Acciones (Claude)" />
+            <div style={{ display: "grid", gap: 8 }}>
+              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8 }}>
+                <button disabled={!canCall || loading} onClick={() => runClaude("summarize")} style={buttonStyle("primary", !canCall || loading)}>
+                  Resumir
+                </button>
+                <button disabled={!canCall || loading} onClick={() => runClaude("expand")} style={buttonStyle("secondary", !canCall || loading)}>
+                  Expandir
+                </button>
+              </div>
+
+              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8 }}>
+                <button disabled={!canCall || loading} onClick={() => runClaude("fix")} style={buttonStyle("secondary", !canCall || loading)}>
+                  Corregir
+                </button>
+                <button disabled={!canCall || loading} onClick={() => runClaude("variations")} style={buttonStyle("ghost", !canCall || loading)}>
+                  Variaciones
+                </button>
+              </div>
+            </div>
+
+            <div style={{ height: 14 }} />
+
+            <SectionTitle title="Estado (Editor)" />
+            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8 }}>
+              {STATUSES.map((s) => {
+                const active = status === s;
+                return (
+                  <button
+                    key={s}
+                    disabled={loading || !contentId}
+                    onClick={() => changeContentStatus(s)}
+                    style={{
+                      ...buttonStyle(active ? "primary" : "secondary", loading || !contentId),
+                      padding: "10px 10px",
+                    }}
+                  >
+                    {s}
+                  </button>
+                );
+              })}
+            </div>
+
+            <div style={{ marginTop: 14, color: UI.text3, fontSize: 12 }}>
+              {loading ? "Procesando…" : "Listo."}
+            </div>
+          </aside>
+
+          {/* Right panel */}
+          <section style={{ display: "grid", gap: 16 }}>
+            {/* Editor */}
+            {tab === "editor" && (
+              <div style={{ ...softCardStyle(), padding: 14 }}>
+                <SectionTitle title="Editor de texto" right={<span style={badgeStyle("neutral")}>{inputText.length} chars</span>} />
+
+                <textarea
+                  value={inputText}
+                  onChange={(e) => setInputText(e.target.value)}
+                  rows={14}
+                  style={{
+                    width: "100%",
+                    padding: 14,
+                    borderRadius: 14,
+                    border: `1px solid ${UI.border}`,
+                    background: "rgba(0,0,0,0.25)",
+                    color: UI.text,
+                    outline: "none",
+                    lineHeight: 1.5,
+                    resize: "vertical",
+                    fontSize: 14,
+                  }}
+                />
+
+                {(result || error) && (
+                  <div style={{ display: "grid", gap: 10, marginTop: 12 }}>
+                    {result && (
+                      <div
+                        style={{
+                          borderRadius: 14,
+                          border: `1px solid rgba(34,197,94,0.25)`,
+                          background: "rgba(34,197,94,0.10)",
+                          padding: 12,
+                          color: "rgba(209,255,225,0.95)",
+                          fontSize: 13,
+                        }}
+                      >
+                        <div style={{ fontWeight: 900, marginBottom: 6 }}>Resultado</div>
+                        <pre style={{ margin: 0, whiteSpace: "pre-wrap", color: "inherit" }}>{result}</pre>
+                      </div>
+                    )}
+
+                    {error && (
+                      <div
+                        style={{
+                          borderRadius: 14,
+                          border: `1px solid rgba(239,68,68,0.30)`,
+                          background: "rgba(239,68,68,0.12)",
+                          padding: 12,
+                          color: "rgba(255,214,214,0.95)",
+                          fontSize: 13,
+                        }}
+                      >
+                        <div style={{ fontWeight: 900, marginBottom: 6 }}>Error</div>
+                        <pre style={{ margin: 0, whiteSpace: "pre-wrap", color: "inherit" }}>{error}</pre>
+                      </div>
+                    )}
+                  </div>
+                )}
+              </div>
+            )}
+
+            {/* Workflow */}
+            {tab === "workflow" && (
+              <div style={{ ...softCardStyle(), padding: 14 }}>
+                <SectionTitle
+                  title="Workflow (Kanban)"
+                  right={
+                    <div style={{ display: "flex", gap: 10, alignItems: "center" }}>
+                      {statusError && <span style={badgeStyle("danger")}>Error: {statusError}</span>}
+                      <button onClick={refreshAllStatuses} disabled={boardLoading} style={buttonStyle("secondary", boardLoading)}>
+                        {boardLoading ? "Actualizando..." : "Refrescar"}
+                      </button>
+                    </div>
+                  }
+                />
+
+                {selectedContentId && currentStatus && (
+                  <div style={{ display: "flex", gap: 10, alignItems: "center", marginBottom: 12, flexWrap: "wrap" }}>
+                    <span style={badgeStyle("primary")}>Seleccionado: {selectedContentId}</span>
+                    <span style={badgeStyle(statusColor(currentStatus))}>Estado: {currentStatus}</span>
+                    {nextActionLabel && (
+                      <button
+                        onClick={() => changeBoardStatus(selectedContentId, nextActionLabel.next)}
+                        disabled={!selectedContentId || boardLoading}
+                        style={buttonStyle("primary", !selectedContentId || boardLoading)}
+                      >
+                        {nextActionLabel.label}
+                      </button>
+                    )}
+                  </div>
+                )}
+
+                <div style={{ display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: 12 }}>
+                  {STATUSES.map((st) => (
+                    <div
+                      key={st}
+                      style={{
+                        borderRadius: 14,
+                        border: `1px solid ${UI.border}`,
+                        background: "rgba(0,0,0,0.18)",
+                        padding: 10,
+                        minHeight: 260,
+                      }}
+                    >
+                      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 10 }}>
+                        <span style={badgeStyle(statusColor(st))}>{st}</span>
+                        <span style={{ color: UI.text3, fontSize: 12, fontWeight: 700 }}>{byStatus[st].length}</span>
+                      </div>
+
+                      <div style={{ display: "grid", gap: 8 }}>
+                        {byStatus[st].map((it) => {
+                          const active = it.contentId === selectedContentId;
+                          return (
+                            <button
+                              key={`${it.contentId}-${it.versionId || it.sk || st}`}
+                              onClick={() => {
+                                setSelectedContentId(it.contentId);
+                                setCurrentStatus(st);
+                              }}
+                              title={it.contentId}
+                              style={{
+                                textAlign: "left",
+                                borderRadius: 12,
+                                padding: "10px 10px",
+                                border: `1px solid ${active ? "rgba(99,102,241,0.45)" : UI.border}`,
+                                background: active ? "rgba(99,102,241,0.12)" : "rgba(255,255,255,0.06)",
+                                color: UI.text,
+                                cursor: "pointer",
+                                transition: "transform 120ms ease, background 120ms ease, border-color 120ms ease",
+                              }}
+                              onMouseDown={(e) => (e.currentTarget.style.transform = "translateY(1px)")}
+                              onMouseUp={(e) => (e.currentTarget.style.transform = "translateY(0px)")}
+                            >
+                              <div style={{ fontSize: 12, fontWeight: 900, letterSpacing: 0.2 }}>contentId</div>
+                              <div style={{ fontSize: 12, color: UI.text2, marginTop: 4, wordBreak: "break-all" }}>
+                                {it.contentId}
+                              </div>
+                            </button>
+                          );
+                        })}
+
+                        {byStatus[st].length === 0 && (
+                          <div style={{ color: UI.text3, fontSize: 12, padding: 10, borderRadius: 12, border: `1px dashed ${UI.border}` }}>
+                            — vacío —
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            {/* Images */}
+            {tab === "images" && (
+              <div style={{ ...softCardStyle(), padding: 14 }}>
+                <SectionTitle
+                  title="Generación de imágenes"
+                  right={<span style={badgeStyle("neutral")}>Titan</span>}
+                />
+
+                <div style={{ display: "grid", gridTemplateColumns: "1fr 220px", gap: 12, alignItems: "end" }}>
+                  <label style={{ display: "grid", gap: 6 }}>
+                    <span style={{ color: UI.text2, fontSize: 12, fontWeight: 700 }}>Prompt</span>
+                    <input
+                      value={imgPrompt}
+                      onChange={(e) => setImgPrompt(e.target.value)}
+                      placeholder='Ej: "un robot simpático en una oficina moderna"'
+                      style={inputStyle()}
+                    />
+                    <SubtleHint>Cuanto más específico (luz, cámara, contexto), mejor.</SubtleHint>
+                  </label>
+
+                  <label style={{ display: "grid", gap: 6 }}>
+                    <span style={{ color: UI.text2, fontSize: 12, fontWeight: 700 }}>Estilo</span>
+                    <select
+                      value={imgStyle}
+                      onChange={(e) => setImgStyle(e.target.value as ImgStyle)}
+                      style={{ ...inputStyle(), cursor: "pointer" }}
+                    >
+                      <option value="realista">Realista</option>
+                      <option value="anime">Anime</option>
+                      <option value="oleo">Óleo</option>
+                    </select>
+                  </label>
+                </div>
+
+                <div style={{ display: "flex", gap: 10, alignItems: "center", marginTop: 12, flexWrap: "wrap" }}>
+                  <button
+                    onClick={generateImage}
+                    disabled={imgLoading || !imgPrompt.trim()}
+                    style={buttonStyle("primary", imgLoading || !imgPrompt.trim())}
+                  >
+                    {imgLoading ? "Generando…" : "Generar imagen"}
+                  </button>
+                  {imgError && <span style={badgeStyle("danger")}>{imgError}</span>}
+                  <span style={badgeStyle("neutral")}>Espera 5–10s entre generaciones</span>
+                </div>
+
+                {lastImageUrl && (
+                  <div style={{ marginTop: 14, display: "grid", gap: 10 }}>
+                    <div style={{ display: "flex", gap: 10, alignItems: "center", justifyContent: "space-between" }}>
+                      <span style={badgeStyle("primary")}>Última imagen</span>
+                      <a
+                        href={lastImageUrl}
+                        target="_blank"
+                        rel="noreferrer"
+                        style={{ color: "rgba(209,213,255,0.95)", fontSize: 13, fontWeight: 800 }}
+                      >
+                        Abrir / Descargar
+                      </a>
+                    </div>
+
+                    <img
+                      src={lastImageUrl}
+                      alt="Última imagen generada"
+                      style={{
+                        width: "100%",
+                        maxWidth: 720,
