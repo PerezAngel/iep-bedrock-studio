@@ -275,24 +275,24 @@ export default function Home() {
 
   // OJO: En tu código original había un `changeStatus` duplicado (1 para editor y 1 para board).
   // Aquí lo dejamos como `changeBoardStatus`.
-  async function changeBoardStatus(cid: string, nextStatus: Status) {
-    setStatusError(null);
-    try {
-      const j: any = await fetchJsonOrThrow(`${API_BASE}/content/status`, {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({ contentId: cid, nextStatus }),
-      });
+  async function changeStatus(contentId: string, nextStatus: Status) {
+  setStatusError(null);
+  try {
+    const r = await fetch(`${API_BASE}/content/${encodeURIComponent(contentId)}/status`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ nextStatus }),
+    });
+    const j = await r.json();
+    if (!r.ok || !j?.ok) throw new Error(j?.error || j?.message || "status_change_failed");
 
-      if (!j?.ok) throw new Error(j?.error || j?.message || "status_change_failed");
-
-      setSelectedContentId(cid);
-      setCurrentStatus(nextStatus);
-      await refreshAllStatuses();
-    } catch (e: any) {
-      setStatusError(e?.message || "status_change_failed");
-    }
+    setCurrentStatus(nextStatus);
+    await refreshAllStatuses();
+  } catch (e: any) {
+    setStatusError(e?.message || "status_change_failed");
   }
+}
+
 
   useEffect(() => {
     refreshAllStatuses();
