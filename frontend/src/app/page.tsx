@@ -208,7 +208,11 @@ export default function Home() {
         </button>
       </div>
 
-      {loading && <p>Procesando...</p>}
+      {loading && (
+        <p style={{ marginTop: 12 }}>
+          Procesando… recuerda esperar unos segundos entre peticiones.
+        </p>
+      )}
       {result && <pre style={{ marginTop: 12, background: "#f5f5f5", padding: 12 }}>{result}</pre>}
       {error && <pre style={{ marginTop: 12, background: "#fff0f0", padding: 12 }}>{error}</pre>}
 
