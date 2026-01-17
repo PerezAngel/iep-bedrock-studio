@@ -24,8 +24,8 @@ const LOGOUT_URI = `${APP_BASE_URL}/`;
 function buildCognitoLoginUrl() {
   const u = new URL(`${COGNITO_DOMAIN}/login`);
   u.searchParams.set("client_id", COGNITO_CLIENT_ID);
-  u.searchParams.set("response_type", "token"); // ✅ token
-  u.searchParams.set("scope", "email openid phone"); // como pediste
+  u.searchParams.set("response_type", "token"); // implicit
+  u.searchParams.set("scope", "email openid phone");
   u.searchParams.set("redirect_uri", REDIRECT_URI);
   return u.toString();
 }
@@ -59,15 +59,10 @@ function getIdToken() {
 }
 
 function clearClientSession() {
-  // Token
   try {
     localStorage.removeItem("id_token");
   } catch {}
 
-  // Local/session storage
-  try {
-    localStorage.clear();
-  } catch {}
   try {
     sessionStorage.clear();
   } catch {}
@@ -89,7 +84,6 @@ function clearClientSession() {
 
   for (const name of [...cookies, ...existingNames]) {
     document.cookie = `${name}=; Max-Age=0; path=/; samesite=lax`;
-    document.cookie = `${name}=; Max-Age=0; path=${location.pathname}; samesite=lax`;
   }
 }
 
@@ -140,19 +134,7 @@ async function fetchJsonOrThrow<T = any>(url: string, init?: RequestInit): Promi
       parsed?.detail ||
       (raw ? String(raw).slice(0, 300) : "");
     throw new Error(`HTTP_${r.status}${msg ? `: ${msg}` : ""}`);
-     if (r.status === 401) setAuthError("No autenticado (401). Inicia sesión.");
-  else if (r.status === 403) setAuthError("Acceso denegado (403).");
-  else setAuthError(`Error HTTP_${r.status}`);
-  return;
   }
-  if (!mounted) {
-  // HTML estable (server y client iguales) => adiós #423
-  return (
-    <main style={{ minHeight: "100vh", padding: 24, background: PAGE_BG, color: UI.text }}>
-      <div style={{ maxWidth: 1160, margin: "0 auto" }}>Cargando…</div>
-    </main>
-  );
-}
 
   return (parsed ?? (raw as any)) as T;
 }
@@ -275,8 +257,8 @@ export default function Home() {
   const backend = process.env.NEXT_PUBLIC_BACKEND_BASE_URL || "";
   const backendBase = useMemo(() => stripTrailingSlashes(backend), [backend]);
   const canCall = !!backendBase;
-  const [mounted, setMounted] = useState(false);
 
+  const [mounted, setMounted] = useState(false);
   useEffect(() => {
     setMounted(true);
   }, []);
@@ -337,18 +319,17 @@ export default function Home() {
    */
   useEffect(() => {
     const qs = new URLSearchParams(window.location.search);
-      if (qs.get("code")) {
-        console.warn(
-      "Has vuelto con ?code=. Estás usando Authorization Code. Usa login con response_type=token."
-    );
-  }
+    if (qs.get("code")) {
+      console.warn("Has vuelto con ?code=. Estás usando Authorization Code. Usa login con response_type=token.");
+    }
+
     let alive = true;
     setAuthLoading(true);
     setAuthError(null);
 
     // ✅ Captura id_token al volver de Cognito
     saveTokenFromHash();
-    
+
     (async () => {
       try {
         const token = getIdToken();
@@ -573,6 +554,15 @@ export default function Home() {
     return null;
   }, [selectedContentId, currentStatus]);
 
+  // ✅ Evita mismatch SSR/CSR y errores tipo "mounted"
+  if (!mounted) {
+    return (
+      <main style={{ minHeight: "100vh", padding: 24, background: PAGE_BG, color: UI.text }}>
+        <div style={{ maxWidth: 1160, margin: "0 auto" }}>Cargando…</div>
+      </main>
+    );
+  }
+
   return (
     <main style={{ minHeight: "100vh", padding: 24, background: PAGE_BG, color: UI.text }}>
       <style jsx global>{`
@@ -617,7 +607,16 @@ export default function Home() {
 
       <div style={{ maxWidth: 1160, margin: "0 auto" }}>
         {/* Header */}
-        <div style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between", gap: 12, marginBottom: 16, flexWrap: "wrap" }}>
+        <div
+          style={{
+            display: "flex",
+            alignItems: "flex-start",
+            justifyContent: "space-between",
+            gap: 12,
+            marginBottom: 16,
+            flexWrap: "wrap",
+          }}
+        >
           <div>
             <div style={{ fontSize: 24, fontWeight: 950, letterSpacing: -0.2 }}>
               IEP - Caso Práctico 3 - Pérez Suárez, Ángel M.
@@ -640,7 +639,11 @@ export default function Home() {
                 Cerrar sesión
               </button>
             ) : (
-              <button onClick={() => window.location.assign(buildCognitoLoginUrl())} style={buttonStyle("secondary", false)} title="Iniciar sesión">
+              <button
+                onClick={() => window.location.assign(buildCognitoLoginUrl())}
+                style={buttonStyle("secondary", false)}
+                title="Iniciar sesión"
+              >
                 Iniciar sesión
               </button>
             )}
@@ -699,14 +702,14 @@ export default function Home() {
         </div>
 
         {/* Aviso */}
-        
         <div
           style={{
             ...softCardStyle(),
             padding: 14,
             marginBottom: 16,
             border: "1px solid rgba(245,158,11,0.55)",
-            background: "linear-gradient(180deg, rgba(245,158,11,0.22), rgba(239,68,68,0.10)), rgba(255,255,255,0.04)",
+            background:
+              "linear-gradient(180deg, rgba(245,158,11,0.22), rgba(239,68,68,0.10)), rgba(255,255,255,0.04)",
             boxShadow: "0 18px 55px rgba(245,158,11,0.10)",
           }}
         >
@@ -732,19 +735,31 @@ export default function Home() {
         {/* Botones de transición por rol */}
         <div style={{ display: "flex", gap: 10, marginBottom: 16, flexWrap: "wrap" }}>
           {currentStatus === "DRAFT" && selectedContentId && isCreator && (
-            <button style={buttonStyle("primary", boardLoading)} onClick={() => changeStatus(selectedContentId, "IN_REVIEW")} disabled={boardLoading}>
+            <button
+              style={buttonStyle("primary", boardLoading)}
+              onClick={() => changeStatus(selectedContentId, "IN_REVIEW")}
+              disabled={boardLoading}
+            >
               Enviar a revisión
             </button>
           )}
 
           {currentStatus === "IN_REVIEW" && selectedContentId && isApprover && (
-            <button style={buttonStyle("primary", boardLoading)} onClick={() => changeStatus(selectedContentId, "APPROVED")} disabled={boardLoading}>
+            <button
+              style={buttonStyle("primary", boardLoading)}
+              onClick={() => changeStatus(selectedContentId, "APPROVED")}
+              disabled={boardLoading}
+            >
               Aprobar
             </button>
           )}
 
           {currentStatus === "APPROVED" && selectedContentId && isApprover && (
-            <button style={buttonStyle("primary", boardLoading)} onClick={() => changeStatus(selectedContentId, "PUBLISHED")} disabled={boardLoading}>
+            <button
+              style={buttonStyle("primary", boardLoading)}
+              onClick={() => changeStatus(selectedContentId, "PUBLISHED")}
+              disabled={boardLoading}
+            >
               Publicar
             </button>
           )}
@@ -761,16 +776,31 @@ export default function Home() {
 
             <label style={{ display: "grid", gap: 6, marginBottom: 10 }}>
               <span style={{ color: UI.text2, fontSize: 12, fontWeight: 900 }}>contentId</span>
-              <input value={contentId} onChange={(e) => setContentId(e.target.value)} placeholder="Se rellena al generar" style={inputStyle()} />
+              <input
+                value={contentId}
+                onChange={(e) => setContentId(e.target.value)}
+                placeholder="Se rellena al generar"
+                style={inputStyle()}
+              />
               <SubtleHint>Usa “Cargar historial” si ya tienes un contentId.</SubtleHint>
             </label>
 
             <div style={{ display: "flex", gap: 8, marginBottom: 12, flexWrap: "wrap" }}>
-              <button onClick={() => contentId && loadContent(contentId)} disabled={!canCall || loading || !contentId} style={buttonStyle("secondary", !canCall || loading || !contentId)}>
+              <button
+                onClick={() => contentId && loadContent(contentId)}
+                disabled={!canCall || loading || !contentId}
+                style={buttonStyle("secondary", !canCall || loading || !contentId)}
+              >
                 Cargar historial
               </button>
 
-              <button onClick={() => { setResult(""); setError(""); }} style={buttonStyle("ghost", false)}>
+              <button
+                onClick={() => {
+                  setResult("");
+                  setError("");
+                }}
+                style={buttonStyle("ghost", false)}
+              >
                 Limpiar mensajes
               </button>
             </div>
@@ -881,7 +911,11 @@ export default function Home() {
                     <span style={badgeStyle("primary")}>Seleccionado: {selectedContentId}</span>
                     <span style={badgeStyle(statusTone(currentStatus))}>Estado: {currentStatus}</span>
                     {nextActionLabel && (
-                      <button onClick={() => changeStatus(selectedContentId, nextActionLabel.next)} disabled={!selectedContentId || boardLoading} style={buttonStyle("primary", !selectedContentId || boardLoading)}>
+                      <button
+                        onClick={() => changeStatus(selectedContentId, nextActionLabel.next)}
+                        disabled={!selectedContentId || boardLoading}
+                        style={buttonStyle("primary", !selectedContentId || boardLoading)}
+                      >
                         {nextActionLabel.label}
                       </button>
                     )}
@@ -941,13 +975,22 @@ export default function Home() {
                 <div className="imgControlsGrid">
                   <label style={{ display: "grid", gap: 6, minWidth: 0 }}>
                     <span style={{ color: UI.text2, fontSize: 12, fontWeight: 900 }}>Prompt</span>
-                    <input value={imgPrompt} onChange={(e) => setImgPrompt(e.target.value)} placeholder='Ej: "un robot simpático en una oficina moderna"' style={inputStyle()} />
+                    <input
+                      value={imgPrompt}
+                      onChange={(e) => setImgPrompt(e.target.value)}
+                      placeholder='Ej: "un robot simpático en una oficina moderna"'
+                      style={inputStyle()}
+                    />
                     <SubtleHint>Cuanto más específico (luz, cámara, contexto), mejor.</SubtleHint>
                   </label>
 
                   <label style={{ display: "grid", gap: 6, minWidth: 0 }}>
                     <span style={{ color: UI.text2, fontSize: 12, fontWeight: 900 }}>Estilo</span>
-                    <select value={imgStyle} onChange={(e) => setImgStyle(e.target.value as ImgStyle)} style={{ ...inputStyle(), cursor: "pointer" }}>
+                    <select
+                      value={imgStyle}
+                      onChange={(e) => setImgStyle(e.target.value as ImgStyle)}
+                      style={{ ...inputStyle(), cursor: "pointer" }}
+                    >
                       <option value="realista">Realista</option>
                       <option value="anime">Anime</option>
                       <option value="oleo">Óleo</option>
@@ -967,12 +1010,21 @@ export default function Home() {
                   <div style={{ marginTop: 14, display: "grid", gap: 10 }}>
                     <div style={{ display: "flex", gap: 10, alignItems: "center", justifyContent: "space-between", flexWrap: "wrap" }}>
                       <span style={badgeStyle("primary")}>Última imagen</span>
-                      <a href={lastImageUrl} target="_blank" rel="noreferrer" style={{ color: "rgba(209,213,255,0.95)", fontSize: 13, fontWeight: 950, textDecoration: "none" }}>
+                      <a
+                        href={lastImageUrl}
+                        target="_blank"
+                        rel="noreferrer"
+                        style={{ color: "rgba(209,213,255,0.95)", fontSize: 13, fontWeight: 950, textDecoration: "none" }}
+                      >
                         Abrir / Descargar
                       </a>
                     </div>
 
-                    <img src={lastImageUrl} alt="Última imagen generada" style={{ width: "100%", maxWidth: 720, borderRadius: 16, border: `1px solid ${UI.border}`, boxShadow: UI.shadow }} />
+                    <img
+                      src={lastImageUrl}
+                      alt="Última imagen generada"
+                      style={{ width: "100%", maxWidth: 720, borderRadius: 16, border: `1px solid ${UI.border}`, boxShadow: UI.shadow }}
+                    />
                   </div>
                 )}
 
@@ -1018,7 +1070,9 @@ export default function Home() {
                   ))}
 
                   {versions.length === 0 && (
-                    <div style={{ color: UI.text3, fontSize: 13, padding: 12, borderRadius: 14, border: `1px dashed ${UI.border}` }}>No hay versiones aún.</div>
+                    <div style={{ color: UI.text3, fontSize: 13, padding: 12, borderRadius: 14, border: `1px dashed ${UI.border}` }}>
+                      No hay versiones aún.
+                    </div>
                   )}
                 </div>
               </div>
