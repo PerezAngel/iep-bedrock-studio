@@ -623,56 +623,7 @@ export default function Home() {
             </div>
           </div>
 
-          {/* Roles (debug visual) + Logout/Login */}
-          <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
-            {authLoading ? (
-              <span style={badgeStyle("neutral")}>Cargando permisos…</span>
-            ) : (
-              <>
-                <span style={badgeStyle(isCreator ? "success" : "neutral")}>Creator: {isCreator ? "sí" : "no"}</span>
-                <span style={badgeStyle(isApprover ? "success" : "neutral")}>Approver: {isApprover ? "sí" : "no"}</span>
-              </>
-            )}
-
-            {getIdToken() ? (
-              <button onClick={logout} style={buttonStyle("ghost", false)} title="Cerrar sesión">
-                Cerrar sesión
-              </button>
-            ) : (
-              <button
-                onClick={() => window.location.assign(buildCognitoLoginUrl())}
-                style={buttonStyle("secondary", false)}
-                title="Iniciar sesión"
-              >
-                Iniciar sesión
-              </button>
-            )}
-          </div>
-        </div>
-
-        {/* Banner auth error visible */}
-        {authError && (
-          <div
-            style={{
-              ...softCardStyle(),
-              padding: 12,
-              marginBottom: 14,
-              border: "1px solid rgba(239,68,68,0.35)",
-              background: "rgba(239,68,68,0.10)",
-              color: "rgba(255,214,214,0.95)",
-              display: "flex",
-              justifyContent: "space-between",
-              alignItems: "center",
-              gap: 12,
-              flexWrap: "wrap",
-            }}
-          >
-            <div style={{ fontWeight: 900 }}>{authError}</div>
-            <button onClick={() => window.location.assign(buildCognitoLoginUrl())} style={buttonStyle("secondary", false)}>
-              Iniciar sesión
-            </button>
-          </div>
-        )}
+          
 
         {/* Tabs */}
         <div className="tabRow" style={{ marginBottom: 14 }}>
