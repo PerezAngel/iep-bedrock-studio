@@ -24,11 +24,12 @@ const LOGOUT_URI = `${APP_BASE_URL}/`;
 function buildCognitoLoginUrl() {
   const u = new URL(`${COGNITO_DOMAIN}/login`);
   u.searchParams.set("client_id", COGNITO_CLIENT_ID);
-  u.searchParams.set("response_type", "token"); // implicit
-  u.searchParams.set("scope", "email openid phone");
-  u.searchParams.set("redirect_uri", REDIRECT_URI);
+  u.searchParams.set("response_type", "code"); // ✅ code flow
+  u.searchParams.set("scope", "email openid phone profile"); // ✅ incluye profile
+  u.searchParams.set("redirect_uri", REDIRECT_URI); // debe coincidir con Cognito
   return u.toString();
 }
+
 
 function buildCognitoLogoutUrl() {
   const u = new URL(`${COGNITO_DOMAIN}/logout`);
