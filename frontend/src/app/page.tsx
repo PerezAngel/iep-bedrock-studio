@@ -10,15 +10,18 @@ const API_BASE = "https://fdlyaer6g6.execute-api.us-east-1.amazonaws.com";
  * - Logout real: endpoint /logout + client_id + logout_uri
  * - Limpieza local: borra storage/cookies típicas para evitar “falso logout” en el SPA
  */
-const COGNITO_DOMAIN = "https://iep-bedrock-studio-803443341700.auth.us-east-1.amazoncognito.com";
+const COGNITO_DOMAIN =
+  "https://iep-bedrock-studio-803443341700.auth.us-east-1.amazoncognito.com";
 const COGNITO_CLIENT_ID = "1k1atbtrk6kivft5geoic5i9bj";
 const APP_BASE_URL = "https://main.d2ggbldh6tpspj.amplifyapp.com";
-const LOGOUT_URI = `${APP_BASE_URL}/logout`; // debe estar permitido en Cognito (Allowed sign-out URLs)
+const REDIRECT_URI = `${APP_BASE_URL}/`;
 
-function buildCognitoLogoutUrl() {
-  const u = new URL(`${COGNITO_DOMAIN}/logout`);
+function buildCognitoLoginUrl() {
+  const u = new URL(`${COGNITO_DOMAIN}/login`);
   u.searchParams.set("client_id", COGNITO_CLIENT_ID);
-  u.searchParams.set("logout_uri", LOGOUT_URI);
+  u.searchParams.set("redirect_uri", REDIRECT_URI);
+  u.searchParams.set("response_type", "code");
+  u.searchParams.set("scope", "email openid phone profile"); // se encodea como + automáticamente
   return u.toString();
 }
 
