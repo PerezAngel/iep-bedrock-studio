@@ -259,9 +259,11 @@ export default function Home() {
   const [lastImageUrl, setLastImageUrl] = useState<string | null>(null);
   const [gallery, setGallery] = useState<GalleryItem[]>([]);
 
-  const requireBackend = useCallback(() => {
-    if (!backendBase) throw new Error("Falta NEXT_PUBLIC_BACKEND_BASE_URL");
-  }, [backendBase]);
+  const logout = useCallback(() => {
+  clearClientSession();
+  window.location.assign(buildCognitoLoginUrl());
+}, []);
+
 
   // ✅ Logout real: limpia cliente y redirige a Cognito /logout
   const logout = useCallback(() => {
