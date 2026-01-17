@@ -140,7 +140,19 @@ async function fetchJsonOrThrow<T = any>(url: string, init?: RequestInit): Promi
       parsed?.detail ||
       (raw ? String(raw).slice(0, 300) : "");
     throw new Error(`HTTP_${r.status}${msg ? `: ${msg}` : ""}`);
+     if (r.status === 401) setAuthError("No autenticado (401). Inicia sesión.");
+  else if (r.status === 403) setAuthError("Acceso denegado (403).");
+  else setAuthError(`Error HTTP_${r.status}`);
+  return;
   }
+  if (!mounted) {
+  // HTML estable (server y client iguales) => adiós #423
+  return (
+    <main style={{ minHeight: "100vh", padding: 24, background: PAGE_BG, color: UI.text }}>
+      <div style={{ maxWidth: 1160, margin: "0 auto" }}>Cargando…</div>
+    </main>
+  );
+}
 
   return (parsed ?? (raw as any)) as T;
 }
@@ -263,6 +275,11 @@ export default function Home() {
   const backend = process.env.NEXT_PUBLIC_BACKEND_BASE_URL || "";
   const backendBase = useMemo(() => stripTrailingSlashes(backend), [backend]);
   const canCall = !!backendBase;
+  const [mounted, setMounted] = useState(false);
+
+  useEffect(() => {
+    setMounted(true);
+  }, []);
 
   const [tab, setTab] = useState<TabKey>("images");
 
@@ -319,18 +336,19 @@ export default function Home() {
    * =========================
    */
   useEffect(() => {
+    const qs = new URLSearchParams(window.location.search);
+      if (qs.get("code")) {
+        console.warn(
+      "Has vuelto con ?code=. Estás usando Authorization Code. Usa login con response_type=token."
+    );
+  }
     let alive = true;
     setAuthLoading(true);
     setAuthError(null);
 
     // ✅ Captura id_token al volver de Cognito
     saveTokenFromHash();
-    const qs = new URLSearchParams(window.location.search);
-  if (qs.get("code")) {
-    console.warn(
-      "Has vuelto con ?code=. Estás usando Authorization Code. Usa login con response_type=token."
-    );
-  }
+    
     (async () => {
       try {
         const token = getIdToken();
