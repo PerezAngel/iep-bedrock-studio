@@ -1,4 +1,15 @@
-"use client";
+import { useEffect } from "react";
+
+export default function LogoutPage() {
+  useEffect(() => {
+    const loginUrl =
+      "https://iep-bedrock-studio-803443341700.auth.us-east-1.amazoncognito.com/login?client_id=1k1atbtrk6kivft5geoic5i9bj&response_type=code&scope=email+openid+phone+profile&redirect_uri=https%3A%2F%2Fmain.d2ggbldh6tpspj.amplifyapp.com%2F";
+
+    window.location.replace(loginUrl);
+  }, []);
+
+  return <p>Cerrando sesión…</p>;
+}
 
 import { useCallback, useEffect, useMemo, useState } from "react";
 import type { CSSProperties, ReactNode } from "react";
@@ -36,7 +47,12 @@ async function fetchJsonOrThrow<T = any>(url: string, init?: RequestInit): Promi
   } catch {
     // Respuesta no JSON
   }
-
+  const logout = () => {
+  window.location.href =
+    "https://iep-bedrock-studio-803443341700.auth.us-east-1.amazoncognito.com/logout" +
+    "?client_id=1k1atbtrk6kivft5geoic5i9bj" +
+    "&logout_uri=https%3A%2F%2Fmain.d2ggbldh6tpspj.amplifyapp.com%2Flogout";
+};
   if (!r.ok) {
     // Intenta sacar error “bonito” si viene como {message,...}
     const msg =
