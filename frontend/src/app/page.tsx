@@ -325,7 +325,12 @@ export default function Home() {
 
     // ✅ Captura id_token al volver de Cognito
     saveTokenFromHash();
-
+    const qs = new URLSearchParams(window.location.search);
+  if (qs.get("code")) {
+    console.warn(
+      "Has vuelto con ?code=. Estás usando Authorization Code. Usa login con response_type=token."
+    );
+  }
     (async () => {
       try {
         const token = getIdToken();
@@ -676,6 +681,7 @@ export default function Home() {
         </div>
 
         {/* Aviso */}
+        
         <div
           style={{
             ...softCardStyle(),
