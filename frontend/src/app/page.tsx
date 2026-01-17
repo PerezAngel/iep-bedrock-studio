@@ -245,6 +245,8 @@ export default function Home() {
   const canCall = !!backendBase;
 
   const [tab, setTab] = useState<TabKey>("images");
+  const [authError, setAuthError] = useState<string | null>(null);
+
 
   // Auth / grupos
   const [userGroups, setUserGroups] = useState<string[]>([]);
@@ -303,29 +305,44 @@ export default function Home() {
    * =========================
    */
   useEffect(() => {
-    let alive = true;
-    setAuthLoading(true);
+  let alive = true;
+  setAuthLoading(true);
+  setAuthError(null);
 
-    (async () => {
-      try {
-        const r = await fetch(`${API_BASE}/me`, { cache: "no-store" });
-        const j = await r.json();
+  (async () => {
+    try {
+      const r = await fetch(`${API_BASE}/me`, { cache: "no-store" });
 
-        if (!alive) return;
-        setUserGroups(j?.ok && Array.isArray(j.groups) ? j.groups : []);
-      } catch {
-        if (!alive) return;
-        setUserGroups([]);
-      } finally {
-        if (!alive) return;
-        setAuthLoading(false);
+      // ✅ Si no está autorizado, lo reflejamos en UI
+      if (!r.ok) {
+        if (r.status === 401) throw new Error("401");
+        if (r.status === 403) throw new Error("403");
+        throw new Error(`HTTP_${r.status}`);
       }
-    })();
 
-    return () => {
-      alive = false;
-    };
-  }, []);
+      const j = await r.json();
+
+      if (!alive) return;
+      setUserGroups(j?.ok && Array.isArray(j.groups) ? j.groups : []);
+    } catch (e: any) {
+      if (!alive) return;
+
+      setUserGroups([]);
+
+      if (e?.message === "401") setAuthError("No autenticado (401). Inicia sesión.");
+      else if (e?.message === "403") setAuthError("Acceso denegado (403). No tienes permisos.");
+      else setAuthError("Error de autenticación. Revisa sesión o conexión.");
+    } finally {
+      if (!alive) return;
+      setAuthLoading(false);
+    }
+  })();
+
+  return () => {
+    alive = false;
+  };
+}, []);
+
 
   const SubtleHint = ({ children }: { children: ReactNode }) => (
     <div style={{ color: UI.text3, fontSize: 12, lineHeight: 1.4 }}>
@@ -594,6 +611,31 @@ export default function Home() {
               IEP - Caso Práctico 3 - Pérez Suárez, Ángel M.
             </div>
           </div>
+          {authError && (
+  <div
+    style={{
+      ...softCardStyle(),
+      padding: 12,
+      marginBottom: 14,
+      border: "1px solid rgba(239,68,68,0.35)",
+      background: "rgba(239,68,68,0.10)",
+      color: "rgba(255,214,214,0.95)",
+      display: "flex",
+      justifyContent: "space-between",
+      alignItems: "center",
+      gap: 12,
+      flexWrap: "wrap",
+    }}
+  >
+    <div style={{ fontWeight: 900 }}>{authError}</div>
+    <button
+      onClick={() => window.location.assign(buildCognitoLoginUrl())}
+      style={buttonStyle("secondary", false)}
+    >
+      Iniciar sesión
+    </button>
+  </div>
+)}
 
           <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
             {authLoading ? (
