@@ -1,21 +1,60 @@
-import { useEffect } from "react";
-
-export default function LogoutPage() {
-  useEffect(() => {
-    const loginUrl =
-      "https://iep-bedrock-studio-803443341700.auth.us-east-1.amazoncognito.com/login?client_id=1k1atbtrk6kivft5geoic5i9bj&response_type=code&scope=email+openid+phone+profile&redirect_uri=https%3A%2F%2Fmain.d2ggbldh6tpspj.amplifyapp.com%2F";
-
-    window.location.replace(loginUrl);
-  }, []);
-
-  return <p>Cerrando sesión…</p>;
-}
+"use client";
 
 import { useCallback, useEffect, useMemo, useState } from "react";
 import type { CSSProperties, ReactNode } from "react";
 
 const API_BASE = "https://fdlyaer6g6.execute-api.us-east-1.amazonaws.com";
 
+/**
+ * Cognito Hosted UI
+ * - Logout real: endpoint /logout + client_id + logout_uri
+ * - Limpieza local: borra storage/cookies típicas para evitar “falso logout” en el SPA
+ */
+const COGNITO_DOMAIN = "https://iep-bedrock-studio-803443341700.auth.us-east-1.amazoncognito.com";
+const COGNITO_CLIENT_ID = "1k1atbtrk6kivft5geoic5i9bj";
+const APP_BASE_URL = "https://main.d2ggbldh6tpspj.amplifyapp.com";
+const LOGOUT_URI = `${APP_BASE_URL}/logout`; // debe estar permitido en Cognito (Allowed sign-out URLs)
+
+function buildCognitoLogoutUrl() {
+  const u = new URL(`${COGNITO_DOMAIN}/logout`);
+  u.searchParams.set("client_id", COGNITO_CLIENT_ID);
+  u.searchParams.set("logout_uri", LOGOUT_URI);
+  return u.toString();
+}
+
+function clearClientSession() {
+  // Local/session storage
+  try {
+    localStorage.clear();
+  } catch {}
+  try {
+    sessionStorage.clear();
+  } catch {}
+
+  // Cookies “típicas” de apps con Cognito/Amplify/NextAuth (best-effort)
+  // Nota: si son HttpOnly, JS no podrá borrarlas (bien: entonces manda Cognito).
+  const cookies = [
+    "CognitoIdentityServiceProvider",
+    "CognitoIdentityServiceProvider." + COGNITO_CLIENT_ID,
+    "amplify-signin-with-hostedUI",
+    "csrfToken",
+    "next-auth.session-token",
+    "__Secure-next-auth.session-token",
+    "next-auth.csrf-token",
+    "__Host-next-auth.csrf-token",
+  ];
+
+  const parts = document.cookie.split(";").map((c) => c.trim());
+  const existingNames = parts.map((p) => p.split("=")[0]).filter(Boolean);
+
+  for (const name of [...cookies, ...existingNames]) {
+    // Borra en path raíz y en path actual (best effort)
+    document.cookie = `${name}=; Max-Age=0; path=/; samesite=lax`;
+    document.cookie = `${name}=; Max-Age=0; path=${location.pathname}; samesite=lax`;
+  }
+}
+
+/* ------------------------------ Tipos ------------------------------ */
 type ImgStyle = "realista" | "anime" | "oleo";
 type Status = "DRAFT" | "IN_REVIEW" | "APPROVED" | "PUBLISHED";
 
@@ -47,14 +86,8 @@ async function fetchJsonOrThrow<T = any>(url: string, init?: RequestInit): Promi
   } catch {
     // Respuesta no JSON
   }
-  const logout = () => {
-  window.location.href =
-    "https://iep-bedrock-studio-803443341700.auth.us-east-1.amazoncognito.com/logout" +
-    "?client_id=1k1atbtrk6kivft5geoic5i9bj" +
-    "&logout_uri=https%3A%2F%2Fmain.d2ggbldh6tpspj.amplifyapp.com%2Flogout";
-};
+
   if (!r.ok) {
-    // Intenta sacar error “bonito” si viene como {message,...}
     const msg =
       parsed?.message ||
       parsed?.error ||
@@ -191,7 +224,6 @@ export default function Home() {
   const [userGroups, setUserGroups] = useState<string[]>([]);
   const [authLoading, setAuthLoading] = useState<boolean>(true);
 
-  // ✅ SOLO una vez (evita duplicar const y errores TS)
   const isCreator = userGroups.includes("designers") || userGroups.includes("writers");
   const isApprover = userGroups.includes("approvers");
 
@@ -228,33 +260,37 @@ export default function Home() {
     if (!backendBase) throw new Error("Falta NEXT_PUBLIC_BACKEND_BASE_URL");
   }, [backendBase]);
 
+  // ✅ Logout real: limpia cliente y redirige a Cognito /logout
+  const logout = useCallback(() => {
+    clearClientSession();
+    window.location.assign(buildCognitoLogoutUrl());
+  }, []);
+
   /**
    * =========================
    * Auth: obtener grupos
    * =========================
-   * Arreglo crítico: tenías un useEffect dentro de otro, y un loadMe suelto.
-   * Aquí dejamos SOLO el fetchAuthSession (Amplify) como fuente de verdad.
    */
   useEffect(() => {
-  let alive = true;
-  setAuthLoading(true); 
+    let alive = true;
+    setAuthLoading(true);
 
-  (async () => {
-    try {
-      const r = await fetch(`${API_BASE}/me`, { cache: "no-store" });
-      const j = await r.json();
+    (async () => {
+      try {
+        const r = await fetch(`${API_BASE}/me`, { cache: "no-store" });
+        const j = await r.json();
 
-      if (!alive) return;
-      setUserGroups(j?.ok && Array.isArray(j.groups) ? j.groups : []);
-    } catch {
-      if (!alive) return;
-      setUserGroups([]);
-    } finally {
-      if (!alive) return;
-      setAuthLoading(false);
-    }
-  })();
-    
+        if (!alive) return;
+        setUserGroups(j?.ok && Array.isArray(j.groups) ? j.groups : []);
+      } catch {
+        if (!alive) return;
+        setUserGroups([]);
+      } finally {
+        if (!alive) return;
+        setAuthLoading(false);
+      }
+    })();
+
     return () => {
       alive = false;
     };
@@ -497,7 +533,16 @@ export default function Home() {
 
       <div style={{ maxWidth: 1160, margin: "0 auto" }}>
         {/* Header */}
-        <div style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between", gap: 12, marginBottom: 16, flexWrap: "wrap" }}>
+        <div
+          style={{
+            display: "flex",
+            alignItems: "flex-start",
+            justifyContent: "space-between",
+            gap: 12,
+            marginBottom: 16,
+            flexWrap: "wrap",
+          }}
+        >
           <div>
             <div style={{ fontSize: 24, fontWeight: 950, letterSpacing: -0.2 }}>
               IEP - Caso Práctico 3 - Pérez Suárez, Ángel M.
@@ -510,21 +555,32 @@ export default function Home() {
               <span style={badgeStyle("neutral")}>Cargando permisos…</span>
             ) : (
               <>
-                <span style={badgeStyle(isCreator ? "success" : "neutral")}>Creator: {isCreator ? "sí" : "no"}</span>
-                <span style={badgeStyle(isApprover ? "success" : "neutral")}>Approver: {isApprover ? "sí" : "no"}</span>
+                <span style={badgeStyle(isCreator ? "success" : "neutral")}>
+                  Creator: {isCreator ? "sí" : "no"}
+                </span>
+                <span style={badgeStyle(isApprover ? "success" : "neutral")}>
+                  Approver: {isApprover ? "sí" : "no"}
+                </span>
               </>
             )}
+
+            {/* ✅ Botón logout real */}
+            <button onClick={logout} style={buttonStyle("ghost", false)} title="Cerrar sesión">
+              Cerrar sesión
+            </button>
           </div>
         </div>
 
         {/* Tabs */}
         <div className="tabRow" style={{ marginBottom: 14 }}>
-          {([
-            { key: "editor", label: "Editor" },
-            { key: "workflow", label: "Workflow" },
-            { key: "images", label: "Imágenes" },
-            { key: "history", label: "Historial" },
-          ] as { key: TabKey; label: string }[]).map((t) => {
+          {(
+            [
+              { key: "editor", label: "Editor" },
+              { key: "workflow", label: "Workflow" },
+              { key: "images", label: "Imágenes" },
+              { key: "history", label: "Historial" },
+            ] as { key: TabKey; label: string }[]
+          ).map((t) => {
             const active = tab === t.key;
             return (
               <button
@@ -549,15 +605,25 @@ export default function Home() {
             padding: 14,
             marginBottom: 16,
             border: "1px solid rgba(245,158,11,0.55)",
-            background: "linear-gradient(180deg, rgba(245,158,11,0.22), rgba(239,68,68,0.10)), rgba(255,255,255,0.04)",
+            background:
+              "linear-gradient(180deg, rgba(245,158,11,0.22), rgba(239,68,68,0.10)), rgba(255,255,255,0.04)",
             boxShadow: "0 18px 55px rgba(245,158,11,0.10)",
           }}
         >
-          <div style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between", gap: 12, flexWrap: "wrap" }}>
+          <div
+            style={{
+              display: "flex",
+              alignItems: "flex-start",
+              justifyContent: "space-between",
+              gap: 12,
+              flexWrap: "wrap",
+            }}
+          >
             <div>
               <div style={{ fontWeight: 950, fontSize: 14 }}>⚠️ Ritmo de peticiones (IMPORTANTE)</div>
               <div style={{ marginTop: 6, color: "rgba(255,244,214,0.95)", fontSize: 13, lineHeight: 1.45 }}>
-                Evita disparar acciones seguidas. Entre llamadas al modelo espera <b>5–10s</b>. Si fuerzas el API, fallará.
+                Evita disparar acciones seguidas. Entre llamadas al modelo espera <b>5–10s</b>. Si fuerzas el API,
+                fallará.
               </div>
               {!canCall && (
                 <div style={{ marginTop: 10 }}>
@@ -572,22 +638,34 @@ export default function Home() {
           </div>
         </div>
 
-        {/* Botones de transición por rol (fuera de runClaude, en el return) */}
+        {/* Botones de transición por rol */}
         <div style={{ display: "flex", gap: 10, marginBottom: 16, flexWrap: "wrap" }}>
           {currentStatus === "DRAFT" && selectedContentId && isCreator && (
-            <button style={buttonStyle("primary", boardLoading)} onClick={() => changeStatus(selectedContentId, "IN_REVIEW")} disabled={boardLoading}>
+            <button
+              style={buttonStyle("primary", boardLoading)}
+              onClick={() => changeStatus(selectedContentId, "IN_REVIEW")}
+              disabled={boardLoading}
+            >
               Enviar a revisión
             </button>
           )}
 
           {currentStatus === "IN_REVIEW" && selectedContentId && isApprover && (
-            <button style={buttonStyle("primary", boardLoading)} onClick={() => changeStatus(selectedContentId, "APPROVED")} disabled={boardLoading}>
+            <button
+              style={buttonStyle("primary", boardLoading)}
+              onClick={() => changeStatus(selectedContentId, "APPROVED")}
+              disabled={boardLoading}
+            >
               Aprobar
             </button>
           )}
 
           {currentStatus === "APPROVED" && selectedContentId && isApprover && (
-            <button style={buttonStyle("primary", boardLoading)} onClick={() => changeStatus(selectedContentId, "PUBLISHED")} disabled={boardLoading}>
+            <button
+              style={buttonStyle("primary", boardLoading)}
+              onClick={() => changeStatus(selectedContentId, "PUBLISHED")}
+              disabled={boardLoading}
+            >
               Publicar
             </button>
           )}
@@ -703,14 +781,32 @@ export default function Home() {
                 {(result || error) && (
                   <div style={{ display: "grid", gap: 10, marginTop: 12 }}>
                     {result && (
-                      <div style={{ borderRadius: 14, border: "1px solid rgba(34,197,94,0.25)", background: "rgba(34,197,94,0.10)", padding: 12, color: "rgba(209,255,225,0.95)", fontSize: 13 }}>
+                      <div
+                        style={{
+                          borderRadius: 14,
+                          border: "1px solid rgba(34,197,94,0.25)",
+                          background: "rgba(34,197,94,0.10)",
+                          padding: 12,
+                          color: "rgba(209,255,225,0.95)",
+                          fontSize: 13,
+                        }}
+                      >
                         <div style={{ fontWeight: 950, marginBottom: 6 }}>Resultado</div>
                         <pre style={{ margin: 0, whiteSpace: "pre-wrap", color: "inherit" }}>{result}</pre>
                       </div>
                     )}
 
                     {error && (
-                      <div style={{ borderRadius: 14, border: "1px solid rgba(239,68,68,0.30)", background: "rgba(239,68,68,0.12)", padding: 12, color: "rgba(255,214,214,0.95)", fontSize: 13 }}>
+                      <div
+                        style={{
+                          borderRadius: 14,
+                          border: "1px solid rgba(239,68,68,0.30)",
+                          background: "rgba(239,68,68,0.12)",
+                          padding: 12,
+                          color: "rgba(255,214,214,0.95)",
+                          fontSize: 13,
+                        }}
+                      >
                         <div style={{ fontWeight: 950, marginBottom: 6 }}>Error</div>
                         <pre style={{ margin: 0, whiteSpace: "pre-wrap", color: "inherit" }}>{error}</pre>
                       </div>
@@ -739,7 +835,11 @@ export default function Home() {
                     <span style={badgeStyle("primary")}>Seleccionado: {selectedContentId}</span>
                     <span style={badgeStyle(statusTone(currentStatus))}>Estado: {currentStatus}</span>
                     {nextActionLabel && (
-                      <button onClick={() => changeStatus(selectedContentId, nextActionLabel.next)} disabled={!selectedContentId || boardLoading} style={buttonStyle("primary", !selectedContentId || boardLoading)}>
+                      <button
+                        onClick={() => changeStatus(selectedContentId, nextActionLabel.next)}
+                        disabled={!selectedContentId || boardLoading}
+                        style={buttonStyle("primary", !selectedContentId || boardLoading)}
+                      >
                         {nextActionLabel.label}
                       </button>
                     )}
@@ -748,7 +848,17 @@ export default function Home() {
 
                 <div style={{ display: "grid", gridTemplateColumns: "repeat(4, minmax(0, 1fr))", gap: 12 }}>
                   {STATUSES.map((st) => (
-                    <div key={st} style={{ borderRadius: 14, border: `1px solid ${UI.border}`, background: "rgba(0,0,0,0.18)", padding: 10, minHeight: 260, minWidth: 0 }}>
+                    <div
+                      key={st}
+                      style={{
+                        borderRadius: 14,
+                        border: `1px solid ${UI.border}`,
+                        background: "rgba(0,0,0,0.18)",
+                        padding: 10,
+                        minHeight: 260,
+                        minWidth: 0,
+                      }}
+                    >
                       <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 10 }}>
                         <span style={badgeStyle(statusTone(st))}>{st}</span>
                         <span style={{ color: UI.text3, fontSize: 12, fontWeight: 900 }}>{byStatus[st].length}</span>
@@ -783,7 +893,9 @@ export default function Home() {
                         })}
 
                         {byStatus[st].length === 0 && (
-                          <div style={{ color: UI.text3, fontSize: 12, padding: 10, borderRadius: 12, border: `1px dashed ${UI.border}` }}>— vacío —</div>
+                          <div style={{ color: UI.text3, fontSize: 12, padding: 10, borderRadius: 12, border: `1px dashed ${UI.border}` }}>
+                            — vacío —
+                          </div>
                         )}
                       </div>
                     </div>
@@ -830,7 +942,12 @@ export default function Home() {
                   <div style={{ marginTop: 14, display: "grid", gap: 10 }}>
                     <div style={{ display: "flex", gap: 10, alignItems: "center", justifyContent: "space-between", flexWrap: "wrap" }}>
                       <span style={badgeStyle("primary")}>Última imagen</span>
-                      <a href={lastImageUrl} target="_blank" rel="noreferrer" style={{ color: "rgba(209,213,255,0.95)", fontSize: 13, fontWeight: 950, textDecoration: "none" }}>
+                      <a
+                        href={lastImageUrl}
+                        target="_blank"
+                        rel="noreferrer"
+                        style={{ color: "rgba(209,213,255,0.95)", fontSize: 13, fontWeight: 950, textDecoration: "none" }}
+                      >
                         Abrir / Descargar
                       </a>
                     </div>
@@ -885,7 +1002,9 @@ export default function Home() {
                   ))}
 
                   {versions.length === 0 && (
-                    <div style={{ color: UI.text3, fontSize: 13, padding: 12, borderRadius: 14, border: `1px dashed ${UI.border}` }}>No hay versiones aún.</div>
+                    <div style={{ color: UI.text3, fontSize: 13, padding: 12, borderRadius: 14, border: `1px dashed ${UI.border}` }}>
+                      No hay versiones aún.
+                    </div>
                   )}
                 </div>
               </div>
